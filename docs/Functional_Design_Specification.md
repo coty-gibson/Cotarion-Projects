@@ -193,7 +193,7 @@ Responsible for:
 
 ## Design Foundation
 
-The Cotarion Platform should not be hard-coded around the current Excel workbook or only around Cotarion Consulting Group's current service offerings. The workbook remains a reference for current pricing rules, formulas, content, and business logic.
+The Cotarion Platform should not be hard-coded around the current Excel workbook or only around Cotarion Consulting Group's current service offerings. The legacy workbook at `reference/Cotarion_Pricing_Tool.xlsx` remains a reference for current pricing rules, formulas, content, and business logic.
 
 The platform should be designed so Cotarion can later add:
 

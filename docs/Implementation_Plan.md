@@ -197,7 +197,7 @@ Each sprint is intended to represent approximately one to two weeks of work for 
 - Pricing logic is in the Domain Layer.
 - UI does not define pricing calculations.
 - Unit tests pass.
-- Manual comparison against the approved Excel workbook confirms matching calculations.
+- Manual comparison against the approved Excel workbook at `reference/Cotarion_Pricing_Tool.xlsx` confirms matching calculations.
 - Advisory Consulting cannot use non-30-minute increments.
 - Project pricing contains no hourly billing model.
 - Proposal Builder and UI workflows are not included.
@@ -241,7 +241,7 @@ Each sprint is intended to represent approximately one to two weeks of work for 
 - All advanced calculations remain inside the Domain Layer.
 - All calculations are independently tested.
 - Unit tests pass.
-- Manual comparison against the approved Excel workbook confirms matching calculations.
+- Manual comparison against the approved Excel workbook at `reference/Cotarion_Pricing_Tool.xlsx` confirms matching calculations.
 - Complexity cannot be directly overridden.
 - Standard discounts cannot stack.
 - Term discounts remain separate from client discounts.
@@ -629,7 +629,7 @@ Potential risks:
 
 ## Pricing Validation Matrix Requirement
 
-Every pricing-related sprint must include a Pricing Validation Matrix comparing the Cotarion Platform against the approved Excel workbook.
+Every pricing-related sprint must include a Pricing Validation Matrix comparing the Cotarion Platform against the approved Excel workbook at `reference/Cotarion_Pricing_Tool.xlsx`.
 
 Representative scenarios should cover:
 
