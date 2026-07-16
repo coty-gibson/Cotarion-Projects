@@ -1,5 +1,6 @@
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import type { NextAuthOptions } from "next-auth";
+import AzureADProvider from "next-auth/providers/azure-ad";
 import CredentialsProvider from "next-auth/providers/credentials";
 import {
   assertDevelopmentAuthIsNotEnabledOutsideDevelopment,
@@ -7,13 +8,25 @@ import {
   DEVELOPMENT_AUTH_USER,
   isDevelopmentAuthEnabled
 } from "@/infrastructure/auth/dev-auth";
+import { getMicrosoftEntraConfig } from "@/infrastructure/auth/microsoft-entra";
 import { prisma } from "@/infrastructure/database/prisma";
 
 assertDevelopmentAuthIsNotEnabledOutsideDevelopment();
 
+const microsoftEntraConfig = getMicrosoftEntraConfig();
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
+    ...(microsoftEntraConfig
+      ? [
+          AzureADProvider({
+            clientId: microsoftEntraConfig.clientId,
+            clientSecret: microsoftEntraConfig.clientSecret,
+            tenantId: microsoftEntraConfig.tenantId
+          })
+        ]
+      : []),
     ...(isDevelopmentAuthEnabled()
       ? [
           CredentialsProvider({
