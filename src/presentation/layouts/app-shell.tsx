@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { SignOutButton } from "@/presentation/components/auth/sign-out-button";
 
 const navigationItems = [
   "Dashboard",
@@ -34,9 +35,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </aside>
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="border-b px-6 py-5">
-            <p className="text-sm font-medium text-muted-foreground">Sprint 1 foundation</p>
-            <p className="mt-1 text-lg font-semibold">Minimal application shell</p>
+          <header className="flex items-center justify-between gap-4 border-b px-6 py-5">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Sprint 2A foundation</p>
+              <p className="mt-1 text-lg font-semibold">Protected application shell</p>
+            </div>
+            <SignOutButton />
           </header>
           <div className="flex-1 px-6 py-8">{children}</div>
         </section>

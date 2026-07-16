@@ -62,3 +62,4 @@ Identify conditions that may require revisiting the decision.
 - ADR-012: Permanent Document Retention
 - ADR-013: Lowest-Maintenance Hosting Priority
 - ADR-014: In-Application PDF Rendering with Future Worker Option
+- ADR-015: Application Users Belong to One Company Workspace

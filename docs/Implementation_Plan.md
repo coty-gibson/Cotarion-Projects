@@ -45,36 +45,164 @@ Each sprint is intended to represent approximately one to two weeks of work for 
 
 **Deferred:** Authentication, database schema, pricing logic, proposal UI.
 
-### Sprint 2: Authentication And User Foundation
+### Sprint 2A: Authentication Foundation
 
-**Objective:** Implement secure sign-in foundation and user identity model.
+**Objective:** Prove the secure authentication architecture and application user-profile mapping without allowing external OAuth configuration to block development.
 
-**Business Value:** Enables owner-based workspaces, future consultants, and secure access.
+**Business Value:** Establishes secure access, durable session handling, and the application-owned user identity foundation needed before workspace, ownership, proposal, and client records are introduced.
+
+**Recommended Development PostgreSQL Option:** Neon is recommended for local/development managed PostgreSQL because it provides serverless managed Postgres, a free plan, connection strings that work with Prisma, and database branching that is useful for development workflows. The application must still use only standards-compliant PostgreSQL and Prisma-supported behavior so the provider remains replaceable.
 
 **Features Included:**
 
-- Auth.js setup
-- Microsoft sign-in
-- Google sign-in
-- Secure email/password sign-in using approved provider/session patterns
-- User profile record in PostgreSQL
-- Basic session handling
-- Protected app shell
+- Managed PostgreSQL development database connection
+- Prisma setup and migrations
+- Auth.js foundation
+- Secure session handling
+- Protected application routes
+- Unauthenticated redirect to the sign-in screen
+- Application-owned user profile record linked to the authenticated identity
+- Sign-in and sign-out flow
+- Temporary development-only authentication method that is clearly isolated and cannot be enabled in production accidentally
+- Unit and integration tests for user-profile mapping and session helpers
+- Playwright coverage for protected-route behavior and the development sign-in flow
+- Existing Sprint 1 checks remain green
 
-**Dependencies:** Sprint 1, managed PostgreSQL connection decision for development.
+**Dependencies:** Sprint 1; Neon development database or another standards-compliant managed PostgreSQL database connection string.
+
+**Do Not Include:**
+
+- Microsoft OAuth
+- Google OAuth
+- Email/password authentication
+- Password storage
+- Password reset
+- MFA
+- User administration
+- Invitations
+- Roles beyond the minimum structure needed for the current authenticated user
+- My Workspace / Company View
+- Client, proposal, pricing, agreement, or engagement functionality
+
+**Temporary Development Authentication Method:**
+
+- Use an Auth.js development-only provider/path that creates a deterministic non-production authenticated identity, such as `dev-owner@cotarion.local`, without accepting or storing a password.
+- Enable it only when `NODE_ENV === "development"` and an explicit development flag such as `ENABLE_DEV_AUTH=true` is present.
+- Fail closed if the development provider is configured in production, preview, CI production-like builds, or any environment where `NODE_ENV !== "development"`.
+- Keep all development-auth files and environment variables clearly named with `dev` and exclude the provider from the production Auth.js provider list.
+- Treat the development identity like any other authenticated identity after sign-in so user-profile mapping, sessions, route protection, and sign-out are tested through the real application path.
+
+**Database Records And Relationships Required:**
+
+- Auth.js adapter tables for users, accounts, sessions, and verification tokens as required by the selected Auth.js Prisma adapter.
+- Company table with a seeded Version 1 company record for Cotarion Consulting Group.
+- Application-owned `ApplicationUser` profile table.
+- `ApplicationUser` has a required one-to-one relationship to the Auth.js user identity.
+- `ApplicationUser` belongs to exactly one `Company`.
+- `ApplicationUser` stores application concerns such as display name, active status, created timestamp, updated timestamp, and the minimum current-user role/status structure needed by later authorization work.
+- No password hashes, reset tokens, MFA secrets, or provider-specific PostgreSQL objects are created.
+
+**Expected Files Created Or Modified In Implementation:**
+
+- `package.json`
+- `package-lock.json`
+- `.env.example`
+- `.gitignore`
+- `prisma/schema.prisma`
+- `prisma/migrations/**`
+- `src/infrastructure/auth/**`
+- `src/infrastructure/database/**`
+- `src/application/users/**`
+- `src/application/companies/**`
+- `src/application/session/**`
+- `src/app/api/auth/[...nextauth]/route.ts`
+- `src/app/sign-in/page.tsx`
+- `src/app/sign-out/route.ts`
+- `src/app/(protected)/layout.tsx`
+- `src/app/(protected)/page.tsx`
+- Existing shell routes/pages as needed to move authenticated content under the protected route group
+- `src/middleware.ts` if route-level middleware is chosen for protection
+- `src/test/**` or colocated unit/integration test files for session helpers and user-profile mapping
+- `tests/e2e/**` Playwright tests for protected-route redirects and development sign-in
+- `README.md` only for environment setup notes if needed
+
+**Testing Strategy:**
+
+- Unit tests verify session helper behavior, production guard behavior, and no-session behavior.
+- Integration tests verify authenticated identity to `ApplicationUser` mapping, idempotent profile creation, and existing profile lookup.
+- Integration tests verify the mapped `ApplicationUser` is assigned to the single Version 1 company, Cotarion Consulting Group.
+- Integration tests use the managed development PostgreSQL database or a dedicated test database/schema configured through environment variables.
+- Playwright tests verify unauthenticated protected routes redirect to sign-in, development sign-in reaches the protected app, and sign-out returns the user to unauthenticated behavior.
+- Existing Sprint 1 lint, typecheck, unit, and Playwright smoke checks must remain green.
+
+**Risks And Safeguards:**
+
+- Risk: Development sign-in leaks into production. Safeguard: explicit environment flag, `NODE_ENV` check, production startup failure if enabled, and tests covering the guard.
+- Risk: Auth.js provider records are mistaken for application users. Safeguard: keep `ApplicationUser` in the Application Layer and require mapping through a dedicated workflow/helper.
+- Risk: Authorization logic drifts into React components. Safeguard: route protection and session/current-user helpers live outside UI components.
+- Risk: Database choice creates lock-in. Safeguard: no provider-specific PostgreSQL features; Prisma migrations remain portable.
+- Risk: OAuth configuration delays authentication architecture. Safeguard: defer external OAuth to Sprint 2B.
 
 **Acceptance Criteria:**
 
-- User can sign in and sign out.
-- Authenticated routes are protected.
-- Signed-in user maps to application user record.
-- No custom password-security logic is hand-built.
+- The app connects to a managed PostgreSQL development database through Prisma.
+- Prisma migrations create Auth.js persistence and application user-profile records.
+- Auth.js is configured with secure session handling.
+- Protected application routes require authentication.
+- Unauthenticated users are redirected to the sign-in screen.
+- A signed-in identity maps to exactly one application-owned user profile.
+- Each application user belongs to exactly one company, seeded as Cotarion Consulting Group for Version 1.
+- No company administration, switching, invitations, or management UI is exposed.
+- The development-only sign-in flow works in development without passwords or external OAuth.
+- The development-only sign-in method cannot be enabled outside development accidentally.
+- Users can sign in and sign out.
+- Unit, integration, and Playwright tests cover the authentication foundation.
+- Sprint 1 checks remain green.
 
-**Risks:** Auth.js credentials flow must be implemented safely and not drift into custom security logic.
+**Complexity:** Medium
 
-**Complexity:** Large
+**Deferred:** Microsoft OAuth, Google OAuth, email/password authentication, password storage, password reset, MFA, full user administration, invitations, role management, My Workspace, Company View, and business record functionality.
 
-**Deferred:** Full user admin, invitation workflow, MFA, password reset customization.
+### Sprint 2B: Microsoft Authentication
+
+**Objective:** Add Microsoft Entra ID / Microsoft 365 sign-in through Auth.js after the authentication architecture and user-profile mapping have been proven.
+
+**Business Value:** Enables Cotarion's expected Microsoft 365 identity flow without blocking Sprint 2A on external OAuth tenant and callback configuration.
+
+**Features Included:**
+
+- Microsoft Entra ID / Microsoft 365 sign-in through Auth.js
+- Secure OAuth callback configuration
+- Mapping Microsoft identities to existing application user profiles
+- Manual and automated verification where practical
+- Removal or continued strict isolation of the development-only sign-in path
+
+**Dependencies:** Sprint 2A; Microsoft Entra ID app registration; approved callback URLs for local, preview, and production environments.
+
+**Do Not Include:**
+
+- Google sign-in
+- Email/password authentication
+- Password storage
+- Password reset
+- MFA
+- User administration
+- Invitations
+- Client, proposal, pricing, agreement, or engagement functionality
+
+**Acceptance Criteria:**
+
+- User can sign in and sign out with Microsoft 365.
+- Microsoft OAuth callback configuration is documented for each environment.
+- Microsoft-authenticated users map to the correct existing `ApplicationUser` record.
+- Development-only sign-in remains blocked outside development or is removed if no longer needed.
+- Existing Sprint 2A tests remain green, with Microsoft-specific automated coverage where practical.
+
+**Risks:** OAuth tenant configuration, callback URL mismatch, and identity matching rules must be handled carefully to avoid duplicate application profiles.
+
+**Complexity:** Medium
+
+**Deferred:** Google sign-in until demonstrated business need; email/password authentication unless explicitly reopened by the Product Owner.
 
 ### Sprint 3: Roles, Ownership, And Navigation Shell
 
@@ -621,7 +749,8 @@ Each sprint is intended to represent approximately one to two weeks of work for 
 
 Potential risks:
 
-- Authentication depends on a development PostgreSQL provider decision. This should be resolved before Sprint 2.
+- Authentication depends on a development PostgreSQL provider decision. Neon is recommended for Sprint 2A, while the schema must remain standards-compliant and provider-portable.
+- Microsoft OAuth depends on Microsoft Entra ID app registration and callback URL configuration. This is intentionally deferred to Sprint 2B so Sprint 2A can prove the auth architecture without external OAuth blocking progress.
 - Object storage provider is deferred, but Sprint 13 cannot start without a provider selected for development/testing.
 - PDF rendering can reveal deployment constraints late. A minimal PDF proof should be done early in Sprint 13 or as a spike before it.
 - Snapshot modeling in Sprint 12 is foundational for documents and agreements. It should not be rushed.
@@ -658,17 +787,21 @@ A pricing-related sprint cannot be considered complete until all required scenar
 The proposed order is generally safe because it builds foundations first:
 
 1. Foundation
-2. Auth/users
-3. Roles/navigation/ownership
-4. Clients
-5. Services & Pricing
-6. Pricing engine
-7. Advanced pricing logic
-8. Proposal builder
+2. Auth foundation and application user mapping
+3. Microsoft authentication
+4. Roles/navigation/ownership
+5. Clients
+6. Services & Pricing
+7. Pricing engine
+8. Advanced pricing logic
+9. Proposal builder
 
 Recommended refinements:
 
 - Keep Sprint 6 and Sprint 7 strongly domain/test focused before major UI integration.
+- Keep Sprint 2A free of external OAuth so authentication architecture can be validated independently.
+- Keep Google sign-in deferred until there is a demonstrated business need.
+- Keep email/password authentication out of Version 1 unless the Product Owner explicitly reopens the decision.
 - Do a lightweight PDF feasibility spike before or at the start of Sprint 13.
 - Keep dashboard polish late so it reflects real records instead of imagined metrics.
 - Keep engagement features minimal until proposal/agreement flow is complete.

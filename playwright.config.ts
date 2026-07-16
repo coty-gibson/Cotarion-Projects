@@ -12,7 +12,14 @@ export default defineConfig({
     command: "npm run dev",
     url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
-    timeout: 120000
+    timeout: 120000,
+    env: {
+      ...process.env,
+      DATABASE_URL: process.env.DATABASE_URL ?? "postgresql://user:password@localhost:5432/cotarion",
+      ENABLE_DEV_AUTH: "true",
+      NEXTAUTH_URL: process.env.NEXTAUTH_URL ?? "http://127.0.0.1:3000",
+      NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ?? "development-e2e-secret"
+    }
   },
   projects: [
     {
