@@ -1,5 +1,19 @@
 # Changelog
 
+## Version 0.2 Authentication - 2026-07-17
+
+Version 0.2 completes and locally verifies the Cotarion Platform authentication milestone.
+
+### Included
+
+- Microsoft Entra ID sign-in through Auth.js.
+- Auth.js session persistence using the Prisma adapter.
+- Protected application routes with unauthenticated users redirected to sign-in.
+- Microsoft identity mapping to the application-owned `ApplicationUser` profile.
+- `Account.ext_expires_in` Prisma schema and database migration support for Microsoft account data.
+- Development sign-in retained as a strictly development-only path that fails closed outside development.
+- Successful manual verification of Microsoft sign-in and sign-out in local development.
+
 ## Version 0.1 Foundation - 2026-07-16
 
 Version 0.1 establishes the approved Cotarion Platform foundation through Sprint 2A.
