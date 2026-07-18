@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased - Sprint 3 Clients Foundation
+
+### Added
+
+- Company-scoped client records with immutable sequential `CLI-######` identifiers.
+- Controlled client industry, logo/image URL, website, business address, relationship notes, owner, and approved status values.
+- Optional primary client contact with searchable email and phone information.
+- Client dashboard count, recent clients, and first-client empty state.
+- Client list, search, status filtering, detail, creation, and editing workflows.
+- Duplicate client-name warning with an explicit create/save-anyway path.
+- Clients navigation plus disabled future-module navigation marked `Coming Soon`.
+
 ## Version 0.2 Authentication - 2026-07-17
 
 Version 0.2 completes and locally verifies the Cotarion Platform authentication milestone.

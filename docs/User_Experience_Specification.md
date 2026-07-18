@@ -39,6 +39,8 @@ Version 1 navigation should expose only the active Pricing & Proposals experienc
 - Templates
 - Admin
 
+During the Sprint 3 Clients foundation, **Dashboard** and **Clients** are active. Pricing, Proposals, Agreements, Engagements, Services & Pricing, Templates, and Admin remain visible for product orientation but are disabled and clearly labeled **Coming Soon** until their approved implementation sprints.
+
 The interface should not expose future unfinished modules such as:
 
 - Engagement Management

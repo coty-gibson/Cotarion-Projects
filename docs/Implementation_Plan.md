@@ -204,66 +204,46 @@ Each sprint is intended to represent approximately one to two weeks of work for 
 
 **Deferred:** Google sign-in until demonstrated business need; email/password authentication unless explicitly reopened by the Product Owner.
 
-### Sprint 3: Roles, Ownership, And Navigation Shell
+### Sprint 3: Clients Foundation
 
-**Objective:** Establish platform navigation, My Workspace, Company View foundations, and authorization primitives.
+**Objective:** Deliver the first usable Clients module using the existing authentication, company isolation, protected routes, `ApplicationUser` ownership, and layered architecture.
 
-**Business Value:** Prevents the application from becoming a single-user tool and supports future consultant growth.
-
-**Features Included:**
-
-- Navigation shell for Pricing & Proposals
-- My Workspace / Company View switch
-- Role model: Administrator, Consultant, Read-only foundation
-- Record ownership primitives
-- Basic permission checks
-- Empty Dashboard shell
-
-**Dependencies:** Sprint 2.
-
-**Acceptance Criteria:**
-
-- Navigation exposes only Version 1 module areas.
-- My Workspace and Company View are visible according to role.
-- Authorization checks are centralized outside UI components.
-- Owner field pattern is established.
-
-**Risks:** Permission model can become too complex too early.
-
-**Complexity:** Medium
-
-**Deferred:** Department leader role, full user management, advanced approval workflow.
-
-### Sprint 4: Client Management
-
-**Objective:** Build reusable client and contact records.
-
-**Business Value:** Establishes the business record foundation for proposals, agreements, documents, and engagements.
+**Business Value:** Establishes the first durable business records without introducing unrelated modules or a premature CRM.
 
 **Features Included:**
 
-- Client list
-- Client creation
-- Client detail
-- Basic contact records
-- Owner assignment
-- Duplicate client warning
-- Client notes field
+- Clients-focused dashboard with client count, recent clients, and first-client empty state
+- Client list, creation, detail, and editing
+- Immutable sequential client IDs in `CLI-######` format
+- Prospect, Active Client, and Inactive statuses
+- Optional controlled industry, logo/image URL, website, and one business address
+- Optional primary contact
+- Expanded relationship and meeting notes
+- Company-scoped search by client name, website, contact name, email, and phone
+- Status filtering
+- Duplicate normalized-name warning with explicit override
+- Current user as default owner
+- Dashboard and Clients as active navigation
+- Pricing, Proposals, Agreements, Engagements, Services & Pricing, Templates, and Admin visible but disabled with a Coming Soon indicator
 
-**Dependencies:** Sprint 3.
+**Dependencies:** Version 0.2 Authentication.
 
 **Acceptance Criteria:**
 
-- User can create, view, edit, and archive clients.
-- Client records have owners.
-- Client detail shows empty states for proposals, agreements, and engagements.
-- Company View shows owner on client records.
+- Authenticated active users can create, view, edit, search, and filter company clients.
+- All client reads and writes enforce company isolation outside presentation components.
+- Client IDs are generated automatically, remain immutable, and are safe under concurrent creation.
+- The dashboard presents useful client information and an actionable empty state.
+- Existing authentication and protected-route behavior remains intact.
+- Automated validation, repository integration, and end-to-end client workflows pass.
 
-**Risks:** Scope creep into CRM features.
+**Risks:** Scope creep into CRM activity tracking, broader authorization, or future business modules.
 
 **Complexity:** Medium
 
-**Deferred:** CRM automation, client portal, document management, contact history.
+**Deferred:** Pricing, proposals, agreements, engagements, document generation, lead tracking, imports, broader role management, user deletion, permanent client deletion, CRM automation, client portal, multiple-contact management, and contact history.
+
+The former standalone Sprint 4 Client Management scope is incorporated into Sprint 3. Future sprint numbering and the previously proposed roles/navigation work must be replanned after Sprint 3 approval.
 
 ### Sprint 5: Services & Pricing Administration Foundation
 

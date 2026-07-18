@@ -63,6 +63,8 @@ model Company {
   updatedAt DateTime @updatedAt
 
   applicationUsers ApplicationUser[]
+  clients          Client[]
+  clientSequence   ClientSequence?
 }
 
 model ApplicationUser {
@@ -78,6 +80,7 @@ model ApplicationUser {
 
   authUser User    @relation(fields: [authUserId], references: [id], onDelete: Cascade)
   company  Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  ownedClients Client[]
 }
 
 enum ApplicationUserStatus {
@@ -87,4 +90,87 @@ enum ApplicationUserStatus {
 
 enum ApplicationUserRole {
   MEMBER
+}
+
+model ClientSequence {
+  companyId String @id
+  lastValue Int    @default(0)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model Client {
+  id             String       @id @default(cuid())
+  clientNumber   String       @unique
+  companyId      String
+  ownerId        String
+  name           String
+  normalizedName String
+  businessType   ClientBusinessType?
+  imageUrl       String?
+  website        String?
+  street         String?
+  city           String?
+  state          String?
+  postalCode     String?
+  notes          String?      @db.Text
+  status         ClientStatus @default(PROSPECT)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  owner    ApplicationUser @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  contacts ClientContact[]
+
+  @@index([companyId, status])
+  @@index([companyId, normalizedName])
+  @@index([companyId, updatedAt])
+  @@index([ownerId])
+}
+
+model ClientContact {
+  id        String   @id @default(cuid())
+  clientId  String
+  firstName String
+  lastName  String
+  jobTitle  String?
+  email     String?
+  phone     String?
+  isPrimary Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([email])
+  @@index([phone])
+}
+
+enum ClientStatus {
+  PROSPECT
+  ACTIVE_CLIENT
+  INACTIVE
+}
+
+enum ClientBusinessType {
+  ACCOUNTING
+  ARCHITECTURE
+  AUTOMOTIVE
+  CONSTRUCTION
+  CONSULTING
+  EDUCATION
+  FINANCIAL_SERVICES
+  GOVERNMENT
+  HEALTHCARE
+  HOSPITALITY
+  LEGAL
+  MANUFACTURING
+  NONPROFIT
+  REAL_ESTATE
+  RESTAURANT_FOOD_SERVICE
+  RETAIL
+  TECHNOLOGY
+  TRANSPORTATION_LOGISTICS
+  OTHER
 }

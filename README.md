@@ -4,6 +4,12 @@ Version 1 module: **Pricing & Proposals**
 
 This repository contains the Cotarion Platform application foundation.
 
+## Sprint 3 Clients Foundation
+
+Sprint 3 establishes the first usable business foundation without introducing pricing, proposal, agreement, engagement, document, lead, or import functionality.
+
+The protected application now provides a Clients-focused dashboard and company-scoped workflows to create, search, view, and edit clients. Client records include an immutable `CLI-######` identifier, owner, approved lifecycle status, optional controlled industry and image URL, one business address, a primary contact, and expanded relationship notes. Future module navigation remains visible but disabled and marked `Coming Soon`.
+
 ## Version 0.2 Authentication
 
 **Status:** Complete, approved, and locally verified.
