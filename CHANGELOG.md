@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased - Sprint 3 Clients Foundation
+## Unreleased - Version 1 Pricing Engine Completion
+
+### Added
+
+- A shared Pricing Project workflow for Project, Fixed Retainer, Profit-Share Retainer, Hybrid Retainer, and Advisory Hourly pricing.
+- Fixed Retainer calculations with approved complexity, term discounts, and standard discounts.
+- Profit-Share and Hybrid calculations using retained three-month Adjusted Operating Profit inputs and half-percentage-point rate rounding.
+- Advisory Consulting pricing at $250 per hour in 30-minute billable increments.
+- Immutable pricing methodology, configuration, input, adjustment, output, discount, and rounding records for downstream use.
+- Model-specific pricing controls, live calculations, draft persistence, detail views, and project-list visibility.
+- Automated domain, persistence, precision, concurrency, seed, and end-to-end coverage for all Version 1 pricing models.
+
+### Architecture
+
+- Pricing models remain explicit calculation boundaries inside the shared Pricing Project aggregate, as recorded in ADR-016.
+
+## Version 0.3 Clients Foundation - 2026-07-17
 
 ### Added
 

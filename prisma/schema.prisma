@@ -62,25 +62,32 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  applicationUsers ApplicationUser[]
-  clients          Client[]
-  clientSequence   ClientSequence?
+  applicationUsers             ApplicationUser[]
+  clients                      Client[]
+  clientSequence               ClientSequence?
+  pricingProjects              PricingProject[]
+  serviceCatalogItems          ServiceCatalogItem[]
+  pricingConfiguration         PricingConfiguration?
+  pricingConfigurationVersions PricingConfigurationVersion[]
 }
 
 model ApplicationUser {
-  id        String                @id @default(cuid())
-  authUserId String               @unique
-  companyId String
-  email     String                @unique
-  name      String?
-  status    ApplicationUserStatus @default(ACTIVE)
-  role      ApplicationUserRole   @default(MEMBER)
-  createdAt DateTime              @default(now())
-  updatedAt DateTime              @updatedAt
+  id         String                @id @default(cuid())
+  authUserId String                @unique
+  companyId  String
+  email      String                @unique
+  name       String?
+  status     ApplicationUserStatus @default(ACTIVE)
+  role       ApplicationUserRole   @default(MEMBER)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
 
-  authUser User    @relation(fields: [authUserId], references: [id], onDelete: Cascade)
-  company  Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  ownedClients Client[]
+  authUser             User             @relation(fields: [authUserId], references: [id], onDelete: Cascade)
+  company              Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  ownedClients         Client[]
+  ownedPricingProjects PricingProject[]
+
+  @@unique([id, companyId])
 }
 
 enum ApplicationUserStatus {
@@ -100,8 +107,8 @@ model ClientSequence {
 }
 
 model Client {
-  id             String       @id @default(cuid())
-  clientNumber   String       @unique
+  id             String              @id @default(cuid())
+  clientNumber   String              @unique
   companyId      String
   ownerId        String
   name           String
@@ -113,15 +120,17 @@ model Client {
   city           String?
   state          String?
   postalCode     String?
-  notes          String?      @db.Text
-  status         ClientStatus @default(PROSPECT)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  notes          String?             @db.Text
+  status         ClientStatus        @default(PROSPECT)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
-  company  Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  owner    ApplicationUser @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  contacts ClientContact[]
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  owner           ApplicationUser  @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  contacts        ClientContact[]
+  pricingProjects PricingProject[]
 
+  @@unique([id, companyId])
   @@index([companyId, status])
   @@index([companyId, normalizedName])
   @@index([companyId, updatedAt])
@@ -173,4 +182,172 @@ enum ClientBusinessType {
   TECHNOLOGY
   TRANSPORTATION_LOGISTICS
   OTHER
+}
+
+enum PricingProjectStatus {
+  DRAFT
+  IN_REVIEW
+  QUOTED
+  ARCHIVED
+}
+
+enum PricingModelType {
+  PROJECT
+  FIXED_RETAINER
+  PROFIT_SHARE_RETAINER
+  HYBRID_RETAINER
+  ADVISORY_HOURLY
+}
+
+enum PricingCurrency {
+  USD
+}
+
+enum ServiceCatalogItemStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PricingConfigurationVersionStatus {
+  ACTIVE
+  RETIRED
+}
+
+model PricingProjectSequence {
+  id        String @id @default("global")
+  lastValue BigInt @default(0)
+}
+
+model ServiceCatalogItem {
+  id             String                   @id @default(cuid())
+  companyId      String
+  code           String
+  name           String
+  description    String?                  @db.Text
+  basePriceMinor BigInt
+  currency       PricingCurrency          @default(USD)
+  status         ServiceCatalogItemStatus @default(ACTIVE)
+  sortOrder      Int
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  company Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  lines   PricingProjectLine[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([companyId, status, sortOrder])
+}
+
+model PricingConfiguration {
+  id        String   @id @default(cuid())
+  companyId String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  versions PricingConfigurationVersion[]
+
+  @@unique([id, companyId])
+}
+
+model PricingConfigurationVersion {
+  id                     String                            @id @default(cuid())
+  pricingConfigurationId String
+  companyId              String
+  version                Int
+  status                 PricingConfigurationVersionStatus @default(ACTIVE)
+  schemaVersion          Int
+  engineVersion          String
+  currency               PricingCurrency                   @default(USD)
+  configuration          Json
+  effectiveFrom          DateTime
+  createdAt              DateTime                          @default(now())
+
+  pricingConfiguration PricingConfiguration @relation(fields: [pricingConfigurationId, companyId], references: [id, companyId], onDelete: Restrict)
+  company              Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  pricingProjects      PricingProject[]
+
+  @@unique([pricingConfigurationId, version])
+  @@unique([id, companyId])
+  @@index([companyId, status])
+}
+
+model PricingProject {
+  id                            String               @id @default(cuid())
+  estimateNumber                String               @unique
+  companyId                     String
+  clientId                      String
+  ownerId                       String
+  sourcePricingProjectId        String?
+  pricingConfigurationVersionId String
+  projectName                   String               @db.VarChar(200)
+  pricingModel                  PricingModelType     @default(PROJECT)
+  methodologyVersion            String               @default("project-pricing/1.0.0")
+  pricingInputSnapshot          Json                 @default("{}")
+  pricingOutputSnapshot         Json                 @default("{}")
+  status                        PricingProjectStatus @default(DRAFT)
+  currency                      PricingCurrency      @default(USD)
+  createdAt                     DateTime             @default(now())
+  updatedAt                     DateTime             @updatedAt
+
+  company                Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  client                 Client                       @relation(fields: [clientId, companyId], references: [id, companyId], onDelete: Restrict)
+  owner                  ApplicationUser              @relation(fields: [ownerId, companyId], references: [id, companyId], onDelete: Restrict)
+  configurationVersion   PricingConfigurationVersion  @relation(fields: [pricingConfigurationVersionId, companyId], references: [id, companyId], onDelete: Restrict)
+  sourcePricingProject   PricingProject?              @relation("PricingProjectSource", fields: [sourcePricingProjectId, companyId], references: [id, companyId], onDelete: Restrict)
+  derivedPricingProjects PricingProject[]             @relation("PricingProjectSource")
+  lines                  PricingProjectLine[]
+  complexitySelections   PricingComplexitySelection[]
+  discountSelection      PricingDiscountSelection?
+
+  @@unique([id, companyId])
+  @@index([companyId, status])
+  @@index([companyId, clientId])
+  @@index([companyId, updatedAt])
+  @@index([ownerId])
+  @@index([sourcePricingProjectId])
+}
+
+model PricingProjectLine {
+  id                   String   @id @default(cuid())
+  companyId            String
+  pricingProjectId     String
+  serviceCatalogItemId String
+  quantity             Decimal  @db.Decimal(18, 2)
+  sortOrder            Int
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  pricingProject     PricingProject     @relation(fields: [pricingProjectId, companyId], references: [id, companyId], onDelete: Cascade)
+  serviceCatalogItem ServiceCatalogItem @relation(fields: [serviceCatalogItemId, companyId], references: [id, companyId], onDelete: Restrict)
+
+  @@index([pricingProjectId, sortOrder])
+  @@index([serviceCatalogItemId])
+}
+
+model PricingComplexitySelection {
+  id               String @id @default(cuid())
+  pricingProjectId String
+  companyId        String
+  factorCode       String
+  optionCode       String
+  sortOrder        Int
+
+  pricingProject PricingProject @relation(fields: [pricingProjectId, companyId], references: [id, companyId], onDelete: Cascade)
+
+  @@unique([pricingProjectId, factorCode])
+  @@index([pricingProjectId, sortOrder])
+}
+
+model PricingDiscountSelection {
+  id               String @id @default(cuid())
+  pricingProjectId String
+  companyId        String
+  discountCode     String
+  sortOrder        Int    @default(0)
+
+  pricingProject PricingProject @relation(fields: [pricingProjectId, companyId], references: [id, companyId], onDelete: Cascade)
+
+  @@unique([pricingProjectId, companyId])
 }

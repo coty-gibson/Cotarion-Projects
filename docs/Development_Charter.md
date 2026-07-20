@@ -398,3 +398,23 @@ Governance Phase: COMPLETE
 Technology Selection: COMPLETE
 
 All future work should proceed through the approved sprint process unless the Product Owner explicitly reopens planning.
+
+## Product Owner Refinement Governance
+
+The [Product Owner Refinement Backlog](Product_Owner_Refinement_Backlog.md) is a permanent governance artifact of the Cotarion Platform.
+
+It is the official record of Product Owner workflow observations gathered through operational use. Its lifecycle, required fields, decision authority, acceptance role, and release gates govern refinement work throughout Version 1 and future product development.
+
+Workflow Improvements do not interrupt roadmap delivery unless they materially prevent workflow completion. Critical Defects pause development until diagnosed, corrected, and validated. Only the Product Owner may approve Workflow Improvements, change Product Owner priorities, reclassify Workflow Improvements as Critical Defects, or close validated backlog items.
+
+Production readiness requires completion of core functionality, Product Owner Acceptance, resolution of Critical Defects, review of High-priority Workflow Improvements, implementation of approved refinement work, and successful end-to-end validation.
+
+## Capability-Driven Development
+
+The [Development Operating Model](Development_Operating_Model.md) governs role responsibilities, routine engineering autonomy, escalation criteria, and the capability delivery cycle.
+
+Development proceeds through approved operational capabilities without requesting Product Owner confirmation for routine engineering decisions. Roadmap implementation pauses only for a Critical Defect, significant architecture decision, conflicting business requirements, Product Owner policy conflict, security concern, or an operational workflow that cannot reasonably be completed without Product Owner direction.
+
+The approved architecture and documented business rules remain valid until explicitly changed by the Product Owner.
+
+Development communication follows the [Development Milestone Report](Development_Milestone_Report_Template.md) standard. Routine implementation does not create approval checkpoints; milestone reporting occurs when an operational capability is complete or when an approved escalation condition requires immediate Product Owner authority.

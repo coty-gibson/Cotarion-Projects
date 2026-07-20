@@ -4,11 +4,11 @@ import { SignOutButton } from "@/presentation/components/auth/sign-out-button";
 
 const navigationItems = [
   { label: "Dashboard", href: "/" },
-  { label: "Clients", href: "/clients" }
+  { label: "Clients", href: "/clients" },
+  { label: "Pricing Projects", href: "/pricing-projects" }
 ];
 
 const comingSoonItems = [
-  "Pricing",
   "Proposals",
   "Agreements",
   "Engagements",
@@ -17,13 +17,7 @@ const comingSoonItems = [
   "Admin"
 ];
 
-export function AppShell({
-  children,
-  userName
-}: {
-  children: ReactNode;
-  userName: string;
-}) {
+export function AppShell({ children, userName }: { children: ReactNode; userName: string }) {
   return (
     <main className="min-h-screen bg-background">
       <div className="mx-auto flex min-h-screen max-w-7xl">
@@ -64,6 +58,20 @@ export function AppShell({
             </div>
             <SignOutButton />
           </header>
+          <nav
+            aria-label="Mobile primary"
+            className="flex gap-1 overflow-x-auto border-b px-4 py-2 lg:hidden"
+          >
+            {navigationItems.map((item) => (
+              <Link
+                className="whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                href={item.href}
+                key={item.label}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
           <div className="flex-1 px-6 py-8">{children}</div>
         </section>
       </div>

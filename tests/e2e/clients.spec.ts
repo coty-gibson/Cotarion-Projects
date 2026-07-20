@@ -6,7 +6,7 @@ test("creates, views, edits, and searches for a client", async ({ page }) => {
 
   await page.goto("/sign-in");
   await page.getByRole("button", { name: "Development sign-in" }).click();
-  await page.getByRole("link", { name: "Clients", exact: true }).click();
+  await page.getByRole("link", { name: "Clients", exact: true }).first().click();
   await page.getByRole("link", { name: "Create client" }).click();
 
   await page.getByLabel("Client name *").fill(clientName);

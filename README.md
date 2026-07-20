@@ -2,7 +2,19 @@
 
 Version 1 module: **Pricing & Proposals**
 
-This repository contains the Cotarion Platform application foundation.
+This repository contains the Cotarion Platform application.
+
+## Version 1 Pricing Engine
+
+The Pricing Projects capability supports the complete Version 1 pricing policy:
+
+- Project Pricing using the approved service catalog, complexity, and standard discounts
+- Fixed Retainers with approved retainer complexity, term discounts, and standard discounts
+- Profit-Share Retainers based on three completed months of Adjusted Operating Profit
+- Hybrid Retainers combining a bounded fixed payment with a calculated profit-share component
+- Advisory Consulting at $250 per hour in 30-minute increments
+
+Every pricing model uses the shared Pricing Project identity, ownership, company isolation, status, estimate number, and persistence architecture. Model-specific inputs and calculation outputs are retained with their methodology and immutable configuration references. The browser workflow supports live calculation, draft saving, reopening, and continued editing without duplicating domain calculations in the interface.
 
 ## Sprint 3 Clients Foundation
 
@@ -92,9 +104,9 @@ Microsoft Entra authentication requires the client ID, client secret, and tenant
 The application uses the approved layered architecture:
 
 - `src/presentation` - pages, screens, layouts, reusable UI, and previews
-- `src/application` - future use cases and workflow coordination
-- `src/domain` - future business rules, pricing logic, and historical integrity rules
-- `src/infrastructure` - future database, auth, storage, PDF, and external integrations
+- `src/application` - use cases and workflow coordination
+- `src/domain` - business rules, pricing logic, and historical integrity rules
+- `src/infrastructure` - database, auth, storage, PDF, and external integrations
 
 Business logic must not be embedded in React pages or UI components.
 

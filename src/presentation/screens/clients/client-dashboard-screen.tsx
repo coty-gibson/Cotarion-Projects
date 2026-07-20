@@ -17,9 +17,14 @@ export function ClientDashboardScreen({
           <p className="text-sm font-medium text-muted-foreground">Clients foundation</p>
           <h2 className="mt-2 text-3xl font-semibold">Dashboard</h2>
         </div>
-        <Button asChild>
-          <Link href="/clients/new">Create client</Link>
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild variant="outline">
+            <Link href="/clients/new">Create Client</Link>
+          </Button>
+          <Button asChild>
+            <Link href="/pricing-projects/new">New Pricing Project</Link>
+          </Button>
+        </div>
       </div>
 
       <section className="mt-8 rounded-lg border bg-background p-6">
@@ -31,7 +36,10 @@ export function ClientDashboardScreen({
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-semibold">Recent Clients</h3>
           {count > 0 ? (
-            <Link className="text-sm font-medium underline-offset-4 hover:underline" href="/clients">
+            <Link
+              className="text-sm font-medium underline-offset-4 hover:underline"
+              href="/clients"
+            >
               View all
             </Link>
           ) : null}

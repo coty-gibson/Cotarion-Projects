@@ -55,9 +55,14 @@ export default async function ClientDetailPage({
             <div className="mt-3"><ClientStatusBadge status={client.status} /></div>
           </div>
         </div>
-        <Button asChild>
-          <Link href={`/clients/${client.id}/edit`}>Edit client</Link>
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild variant="outline">
+            <Link href={`/clients/${client.id}/edit`}>Edit Client</Link>
+          </Button>
+          <Button asChild>
+            <Link href={`/pricing-projects/new?clientId=${client.id}`}>New Pricing Project</Link>
+          </Button>
+        </div>
       </div>
 
       <div className="mt-8 grid gap-6 md:grid-cols-2">
