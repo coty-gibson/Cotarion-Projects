@@ -69,6 +69,9 @@ model Company {
   serviceCatalogItems          ServiceCatalogItem[]
   pricingConfiguration         PricingConfiguration?
   pricingConfigurationVersions PricingConfigurationVersion[]
+  operatingGroups              OperatingGroup[]
+  engagementTypePolicies       EngagementTypePolicyVersion[]
+  proposals                    Proposal[]
 }
 
 model ApplicationUser {
@@ -86,6 +89,7 @@ model ApplicationUser {
   company              Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
   ownedClients         Client[]
   ownedPricingProjects PricingProject[]
+  ownedProposals       Proposal[]
 
   @@unique([id, companyId])
 }
@@ -129,6 +133,7 @@ model Client {
   owner           ApplicationUser  @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   contacts        ClientContact[]
   pricingProjects PricingProject[]
+  proposals       Proposal[]
 
   @@unique([id, companyId])
   @@index([companyId, status])
@@ -218,6 +223,212 @@ model PricingProjectSequence {
   lastValue BigInt @default(0)
 }
 
+enum ProposalStatus {
+  DRAFT
+  INTERNAL_REVIEW
+  SUBMITTED
+  VIEWED
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  SUPERSEDED
+  ARCHIVED
+}
+
+model OperatingGroup {
+  id        String   @id @default(cuid())
+  companyId String
+  code      String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  company                Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  engagementTypePolicies EngagementTypePolicyVersion[]
+  proposals              Proposal[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+}
+
+model EngagementTypePolicyVersion {
+  id                        String   @id @default(cuid())
+  companyId                 String
+  operatingGroupId          String
+  code                      String
+  policyVersion             Int
+  name                      String
+  proposalRequired          Boolean
+  directEngagementPermitted Boolean
+  agreementTemplateCode     String
+  agreementTemplateName     String
+  billingMethod             String
+  policy                    Json
+  policyChecksum            String
+  effectiveFrom             DateTime
+  active                    Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  operatingGroup OperatingGroup @relation(fields: [operatingGroupId, companyId], references: [id, companyId], onDelete: Restrict)
+  proposals      Proposal[]
+
+  @@unique([operatingGroupId, code, policyVersion])
+  @@unique([id, companyId])
+  @@index([companyId, active])
+}
+
+model ProposalSequence {
+  id        String @id @default("global")
+  lastValue BigInt @default(0)
+}
+
+model Proposal {
+  id                     String         @id
+  proposalNumber         String         @unique
+  companyId              String
+  operatingGroupId       String
+  clientId               String
+  ownerId                String
+  engagementTypePolicyId String
+  status                 ProposalStatus @default(DRAFT)
+  currentVersionId       String?
+  submittedVersionId     String?
+  effectiveAt            DateTime?
+  closedAt               DateTime?
+  revisionOpen           Boolean        @default(false)
+  currentAcceptanceId    String?
+  executedAgreementId    String?
+  supersededByProposalId String?
+  draftRevision          Int            @default(1)
+  versionDraftRevision   Int?
+  nextVersionNumber      Int            @default(1)
+  workingDraft           Json
+  pricingSnapshot        Json
+  aggregateState         Json
+  createdAt              DateTime
+  updatedAt              DateTime
+
+  company              Company                     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  operatingGroup       OperatingGroup              @relation(fields: [operatingGroupId, companyId], references: [id, companyId], onDelete: Restrict)
+  client               Client                      @relation(fields: [clientId, companyId], references: [id, companyId], onDelete: Restrict)
+  owner                ApplicationUser             @relation(fields: [ownerId, companyId], references: [id, companyId], onDelete: Restrict)
+  engagementTypePolicy EngagementTypePolicyVersion @relation(fields: [engagementTypePolicyId, companyId], references: [id, companyId], onDelete: Restrict)
+  versions             ProposalVersion[]
+  events               ProposalEvent[]
+  outboxEvents         BusinessEventOutbox[]
+  representations      ProposalRepresentation[]
+
+  @@unique([id, companyId])
+  @@index([companyId, clientId])
+  @@index([companyId, status])
+}
+
+model ProposalVersion {
+  id                   String   @id
+  proposalId           String
+  companyId            String
+  versionNumber        Int
+  createdAt            DateTime
+  createdByUserId      String
+  predecessorVersionId String?
+  revisionReason       String?
+  draft                Json
+
+  proposal        Proposal                 @relation(fields: [proposalId, companyId], references: [id, companyId], onDelete: Restrict)
+  pricingSource   ProposalPricingSource?
+  representations ProposalRepresentation[]
+
+  @@unique([proposalId, versionNumber])
+  @@unique([id, proposalId])
+  @@index([companyId])
+}
+
+model ProposalPricingSource {
+  proposalVersionId    String @id
+  proposalId           String
+  pricingProjectId     String
+  pricingProjectNumber String
+  schemaVersion        Int
+  snapshot             Json
+
+  proposalVersion ProposalVersion @relation(fields: [proposalVersionId, proposalId], references: [id, proposalId], onDelete: Restrict)
+  pricingProject  PricingProject  @relation(fields: [pricingProjectId], references: [id], onDelete: Restrict)
+
+  @@unique([proposalVersionId, proposalId])
+  @@index([pricingProjectId])
+}
+
+model ProposalEvent {
+  eventId            String   @id
+  proposalId         String
+  companyId          String
+  clientId           String
+  occurredAt         DateTime
+  eventType          String
+  eventSchemaVersion Int
+  payload            Json
+  createdAt          DateTime @default(now())
+
+  proposal Proposal @relation(fields: [proposalId, companyId], references: [id, companyId], onDelete: Restrict)
+
+  @@index([companyId, clientId, occurredAt, eventId])
+}
+
+model BusinessEventOutbox {
+  eventId      String    @id
+  proposalId   String
+  companyId    String
+  clientId     String
+  occurredAt   DateTime
+  eventType    String
+  payload      Json
+  publishedAt  DateTime?
+  attemptCount Int       @default(0)
+  lastError    String?   @db.Text
+  createdAt    DateTime  @default(now())
+
+  proposal Proposal @relation(fields: [proposalId, companyId], references: [id, companyId], onDelete: Restrict)
+
+  @@index([publishedAt, occurredAt, eventId])
+  @@index([companyId, clientId, occurredAt, eventId])
+}
+
+model ProposalRepresentation {
+  id                 String   @id
+  proposalId         String
+  companyId          String
+  proposalVersionId  String
+  representationType String
+  rendererVersion    String
+  contentChecksum    String
+  storageReference   String?
+  generatedAt        DateTime
+
+  proposal         Proposal                  @relation(fields: [proposalId, companyId], references: [id, companyId], onDelete: Restrict)
+  proposalVersion  ProposalVersion           @relation(fields: [proposalVersionId, proposalId], references: [id, proposalId], onDelete: Restrict)
+  deliveryAttempts ProposalDeliveryAttempt[]
+
+  @@unique([id, companyId])
+  @@index([proposalVersionId])
+}
+
+model ProposalDeliveryAttempt {
+  id                String   @id
+  companyId         String
+  representationId  String
+  channel           String
+  recipientAddress  String
+  providerReference String?
+  status            String
+  attemptedAt       DateTime
+  errorCode         String?
+
+  representation ProposalRepresentation @relation(fields: [representationId, companyId], references: [id, companyId], onDelete: Restrict)
+
+  @@index([companyId, attemptedAt])
+}
+
 model ServiceCatalogItem {
   id             String                   @id @default(cuid())
   companyId      String
@@ -300,6 +511,7 @@ model PricingProject {
   lines                  PricingProjectLine[]
   complexitySelections   PricingComplexitySelection[]
   discountSelection      PricingDiscountSelection?
+  proposalPricingSources ProposalPricingSource[]
 
   @@unique([id, companyId])
   @@index([companyId, status])

@@ -189,6 +189,8 @@ interface MutableProposalState {
   events: ProposalBusinessEventV1[];
 }
 
+export type PersistedProposalState = Readonly<MutableProposalState>;
+
 const EMPTY_TERMS: ProposalCommercialTerms = {
   paymentSchedule: "",
   billingMethod: "",
@@ -354,6 +356,25 @@ export class ProposalAggregate {
     return aggregate;
   }
 
+  static rehydrate(state: PersistedProposalState, engagementPolicy: EngagementTypePolicyV1) {
+    if (state.contractVersion !== PROPOSAL_CONTRACT_VERSION) {
+      throw new ProposalDomainError("IDENTITY_INVALID", "Unsupported Proposal contract version.");
+    }
+    if (
+      state.engagementTypeCode !== engagementPolicy.code ||
+      state.engagementTypePolicyVersion !== engagementPolicy.policyVersion
+    ) {
+      throw new ProposalDomainError(
+        "IDENTITY_INVALID",
+        "Persisted Proposal Engagement Type policy does not match the supplied policy."
+      );
+    }
+    if (!isValidMajorRecordNumber("PROPOSAL", state.proposalNumber)) {
+      throw new ProposalDomainError("IDENTITY_INVALID", "Persisted Proposal number is invalid.");
+    }
+    return new ProposalAggregate(clone(state) as MutableProposalState, deepFreeze(clone(engagementPolicy)));
+  }
+
   get state(): ProposalState {
     return deepFreeze(
       clone({
@@ -362,6 +383,10 @@ export class ProposalAggregate {
         versionDraftRevision: undefined
       })
     ) as unknown as ProposalState;
+  }
+
+  get persistenceState(): PersistedProposalState {
+    return deepFreeze(clone(this.stateValue));
   }
 
   updateDraft(

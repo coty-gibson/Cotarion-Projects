@@ -24,7 +24,7 @@ type PricingProjectWithRelations = Prisma.PricingProjectGetPayload<{
 }>;
 
 function formatEstimateNumber(value: bigint) {
-  return `EST-${value.toString().padStart(6, "0")}`;
+  return `PP-${value.toString().padStart(6, "0")}`;
 }
 
 function mapProject(project: PricingProjectWithRelations): PersistedPricingProject {
@@ -115,15 +115,14 @@ export function createPrismaPricingProjectRepository(
 ): PricingProjectRepository {
   return {
     async createPricingProject(companyId, input) {
-      const sequence = await client.pricingProjectSequence.upsert({
-        where: { id: "global" },
-        create: { id: "global", lastValue: BigInt(1) },
-        update: { lastValue: { increment: BigInt(1) } },
-        select: { lastValue: true }
-      });
-
       return client.$transaction(
         async (transaction) => {
+          const sequence = await transaction.pricingProjectSequence.upsert({
+            where: { id: "global" },
+            create: { id: "global", lastValue: BigInt(1) },
+            update: { lastValue: { increment: BigInt(1) } },
+            select: { lastValue: true }
+          });
           const project = await transaction.pricingProject.create({
             data: {
               estimateNumber: formatEstimateNumber(sequence.lastValue),

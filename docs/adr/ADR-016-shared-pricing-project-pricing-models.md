@@ -55,6 +55,15 @@ Project-specific service lines, recurring complexity selections, discounts, Adju
 
 The shared aggregate must not become a single undifferentiated calculation function. Each methodology retains its own domain input, validation, calculation, and tests.
 
+Pricing approval, immutable Pricing Versions, `QUOTED` eligibility, and the transition to Proposal-ready output are governed by ADR-021.
+
+## Related decisions
+
+- ADR-000: Cotarion Product Development Methodology
+- ADR-017: Proposal Management Business Architecture
+- ADR-019: Platform Governance & Decision Authority
+- ADR-021: Pricing Approval & QUOTED Lifecycle
+
 ## Alternatives Rejected
 
 ### Separate record system for each pricing model

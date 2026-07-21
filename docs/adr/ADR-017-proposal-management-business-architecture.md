@@ -6,7 +6,7 @@
 
 ## Status
 
-Product Owner Approved — amended 2026-07-20
+Product Owner Approved — amended 2026-07-21
 
 ## Decision Summary
 
@@ -21,6 +21,8 @@ Proposal acceptance and Service Agreement signature are separate business events
 - Proposal acceptance records the Client's intent to proceed with the offered business terms.
 - Service Agreement signature records legal consent.
 - Every Engagement must ultimately reference an executed Service Agreement.
+
+Platform roles, default capabilities, Quality Review, Executive Authorization, Business Justification, audit principles, and business-record preservation are governed by ADR-019. This ADR applies those platform rules to Proposal Management without redefining them. Pricing approval and `QUOTED` source eligibility are governed by ADR-021.
 
 ## Business Context
 
@@ -285,26 +287,28 @@ All cross-record references must enforce Company ownership. Client-facing record
 ### Recommended statuses
 
 - `DRAFT`: Editable working offer; never exposed as a Client submission.
-- `INTERNAL_REVIEW`: Content and commercial terms are frozen for internal review; revisions return it to Draft.
-- `SUBMITTED`: One immutable Proposal Version has been formally sent or made available.
+- `INTERNAL_REVIEW`: Stable compatibility code for the business-facing Quality Review state; content and commercial terms are frozen for independent review, and revisions return the Proposal to Draft.
+- `SUBMITTED`: Submission eligibility and authorization have passed; one immutable Proposal Version has been formally selected and bound as the submitted version; the Proposal has transitioned to `SUBMITTED`; and exactly one permanent Submission Event has been created. The Proposal is now eligible for downstream representation generation, publication, and delivery.
 - `VIEWED`: The submitted version has verified Client viewing evidence.
 - `ACCEPTED`: The Client accepted the submitted commercial offer.
 - `DECLINED`: The Client declined the submitted offer.
 - `EXPIRED`: The offer passed its expiry without acceptance.
-- `SUPERSEDED`: A replacement Proposal or later submitted version invalidated this offer.
+- `SUPERSEDED`: A replacement Proposal invalidated this offer.
 - `ARCHIVED`: Administratively retained and removed from active work queues.
 
 `VIEWED` is useful operational state but viewing events must also be retained separately. The current status is a projection; append-only events preserve when and how the transition happened.
+
+`SUBMITTED` is a Proposal business state reached before communication begins. It does not mean that email delivery occurred, a PDF or HTML representation was generated, portal publication occurred, or the Client received, opened, or viewed the Proposal. Those are downstream representation and communication events and do not create or repeat the Submission Event.
 
 ### Transition rules
 
 ```mermaid
 stateDiagram-v2
     [*] --> Draft
-    Draft --> InternalReview: Request internal review
-    InternalReview --> Draft: Changes requested
-    InternalReview --> Submitted: Approve and submit immutable version
-    Draft --> Submitted: Authorized direct submission
+    Draft --> QualityReview: Request Quality Review
+    QualityReview --> Draft: Changes requested
+    QualityReview --> Submitted: Quality Review completed
+    Draft --> Submitted: Executive Authorization
     Submitted --> Viewed: Verified client view
     Submitted --> Accepted: Client accepts
     Viewed --> Accepted: Client accepts
@@ -325,12 +329,14 @@ stateDiagram-v2
 
 Recommendations:
 
-- Submission identifies exactly one immutable submitted Proposal Version.
-- Editing a submitted offer creates a new working revision; it never changes the submitted version.
-- Submitting a replacement version supersedes the prior submitted version and invalidates its acceptance endpoint.
+- Submission eligibility and authorization must pass before one immutable Proposal Version is bound as submitted.
+- Each Proposal transitions to `SUBMITTED` exactly once and creates exactly one permanent Submission Event atomically with that transition.
+- A submitted offer is not reopened for editing. Its immutable version may be used as the source for a new working revision owned by a replacement Proposal.
+- A revised offer is submitted as a replacement Proposal. Its submission supersedes the prior Proposal and invalidates the prior acceptance endpoint without resubmitting or mutating the original Proposal.
 - Acceptance is prohibited after expiry or supersession.
-- Declined and Expired proposals may be revised into a new version and resubmitted through an explicit reopen/revise action; historical states remain as events.
+- Declined and Expired Proposals may be used as the source for an explicit replacement Proposal and new version; the original Proposal is never resubmitted and its historical states remain as events.
 - Archive is organizational, not deletion, and never removes historical records.
+- Quality Review and Executive Authorization follow ADR-019. A Proposal creator cannot complete Quality Review on their own Proposal.
 
 ## 6. Immutable Proposal Versioning
 
@@ -366,7 +372,7 @@ Future changes to Pricing Projects, Clients, templates, Engagement Types, or con
 - A new version starts from a deliberate copy of the prior version or current working draft.
 - The version records its predecessor and revision reason.
 - Differences can later be presented as a comparison.
-- A new version does not automatically supersede a submitted version until the new version is submitted.
+- A version created for a replacement Proposal does not supersede the prior Proposal's submitted version until the replacement Proposal is independently submitted.
 - Proposal version numbers are not embedded in the user-defined Proposal title.
 
 ## 7. Proposal Packages
@@ -424,7 +430,8 @@ sequenceDiagram
     U->>PR: Complete Pricing Project
     U->>PO: Create working Proposal from pricing snapshot
     U->>PO: Review and submit immutable Proposal Version
-    PO-->>C: Present offer
+    PO->>PO: Bind submitted version and record Submission Event
+    PO-->>C: Later generate/publish/deliver representation
     C->>PO: Accept intent to proceed
     PO->>AG: Supply accepted business terms
     AG-->>C: Present assembled Service Agreement
@@ -572,7 +579,7 @@ Define ports for:
 - reading Client and Contact presentation data
 - reading versioned Engagement Type and template configuration
 - rendering Proposal representations
-- delivering submissions
+- delivering representations of submitted Proposals
 - recording verified views
 - requesting Agreement creation
 - publishing timeline and analytics events
@@ -728,6 +735,7 @@ The Timeline has no command path back to source domains.
 ## 14. Security and Isolation
 
 - Every query and mutation is scoped by authenticated Company.
+- Platform role and capability decisions follow ADR-019; presentation visibility is never the authorization boundary.
 - Proposal, Pricing Project, Client, owner, Engagement Type, templates, and operating group must belong to compatible Company boundaries.
 - Future package composition requires an explicitly authorized corporate boundary; Version 1 must not infer cross-company access.
 - Client viewing and acceptance links must be high-entropy, expiring, revocable, and scoped to one submitted version.
@@ -738,7 +746,7 @@ The Timeline has no command path back to source domains.
 
 ## 15. State and Workflow Consistency
 
-Lifecycle changes should occur through domain commands, not arbitrary status updates. Each transition writes the current status and an append-only event in one transaction. External effects such as email should use an outbox/idempotency pattern so retries do not duplicate submissions or events.
+Lifecycle changes should occur through domain commands, not arbitrary status updates. Each transition writes the current status and an append-only event in one transaction. The submission transition and its single Submission Event commit before any representation or delivery work begins. External effects such as email use an outbox/idempotency pattern; failure, retry, redelivery, publication, and read-receipt handling never undo or repeat submission and never mutate Proposal lifecycle state.
 
 Scheduled expiration should be idempotent. A Proposal cannot expire after acceptance, decline, or supersession.
 
@@ -750,10 +758,10 @@ Scheduled expiration should be idempotent. A Proposal cannot expire after accept
 4. Define initial versioned Engagement Types required by Consulting Group.
 5. Add Proposal, working draft, Proposal Version, pricing-source, recipient, event, and acceptance persistence.
 6. Implement company-isolated repositories and concurrency-safe Proposal/version numbering.
-7. Implement application services for create, edit Draft, create version, internal review, submit, revise, accept, decline, expire, supersede, and archive.
+7. Implement application services for create, edit Draft, create version, Quality Review, Executive Authorization, submit, revise, accept, decline, expire, supersede, and archive.
 8. Build the internal Proposal workspace using structured content.
 9. Add Web View as the first Client-facing representation.
-10. Add submission/delivery and verified-view recording.
+10. Add post-submission representation delivery and verified-view recording without changing Proposal lifecycle state.
 11. Add acceptance workflow and evidence retention.
 12. Add print-ready/PDF representation only after the representation-neutral Proposal workflow is stable.
 13. Integrate the accepted-version handoff contract to the future Agreement Engine.
@@ -907,13 +915,22 @@ The versioned workflow contracts are:
 
 Retainer early termination belongs to Engagement Management and must retain termination reason, effective termination date, applicable exit fee, final invoice, outstanding obligations, retained documents and history, and remaining balances.
 
-### Internal Review
+### Quality Review and Executive Authorization
 
-Owner and Admin users may bypass Internal Review and submit directly. Future permission-based authorization will replace this temporary role rule without changing Proposal lifecycle semantics.
+Proposal governance follows ADR-019:
+
+- Members submit their work through Quality Review.
+- Founder and Admin users may perform Quality Review.
+- A Proposal creator cannot perform Quality Review on their own Proposal.
+- Founder and Admin users may use Executive Authorization only with a retained Business Justification and permanent audit evidence.
+- Executive Authorization follows the approved alternate governance path in ADR-019.
+- Long-term capability-based permissions may replace direct role checks without changing Proposal lifecycle semantics.
+
+The frozen Sprint 0 machine code `INTERNAL_REVIEW` remains a compatibility code for the business-facing Quality Review state until an explicitly governed contract migration occurs. User interfaces and new documentation use “Quality Review.”
 
 ### Expiration
 
-Default Proposal expiration is 30 days. Users may override it, but the override reason is retained. Reminder and notification workflows belong to Operations and are outside Proposal Management.
+Default Proposal expiration is 30 days. Users may change the default, but the exception rationale is retained. Reminder and notification workflows belong to Operations and are outside Proposal Management.
 
 ### Acceptance
 
@@ -942,6 +959,8 @@ Version 1 delivery/representation channels are:
 Client Portal, API, and mobile are future channels. Representations remain independent of the Proposal domain.
 
 Proposal is the system of record. PDF is generated from an immutable Proposal Version and may always be regenerated.
+
+Submission precedes representation and delivery. The transition to `SUBMITTED`, immutable submitted-version binding, and exactly one Submission Event are Proposal business responsibilities. HTML/PDF generation, portal publication, email delivery, delivery attempts and retries, tracking, read receipts, and communication history occur only after submission. They may occur multiple times, but never create another Submission Event, change the submitted-version binding, or mutate Proposal lifecycle state. Delivery failure leaves the Proposal submitted.
 
 ### Pricing
 
@@ -999,3 +1018,5 @@ Revisit the ADR only if a future capability changes aggregate ownership, legal e
 - ADR-014: In-Application PDF Rendering With Future Worker Option
 - ADR-015: Application Users Belong to One Company Workspace
 - ADR-016: Shared Pricing Project With Explicit Pricing Models
+- ADR-019: Platform Governance & Decision Authority
+- ADR-021: Pricing Approval & QUOTED Lifecycle

@@ -208,7 +208,7 @@ describeWithDatabase("Pricing persistence", () => {
       draft("Operational Foundation", "1.25")
     );
 
-    expect(created.estimateNumber).toMatch(/^EST-\d{6,}$/);
+    expect(created.estimateNumber).toMatch(/^PP-\d{6,}$/);
     expect(created.status).toBe("DRAFT");
     expect(created.currency).toBe("USD");
     expect(created.companyId).toBe(companyId);
@@ -310,7 +310,7 @@ describeWithDatabase("Pricing persistence", () => {
     );
     const numbers = projects.map(({ estimateNumber }) => estimateNumber);
     const values = numbers
-      .map((number) => BigInt(number.replace("EST-", "")))
+      .map((number) => BigInt(number.replace(/^(?:EST|PP)-/, "")))
       .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 
     expect(new Set(numbers).size).toBe(12);

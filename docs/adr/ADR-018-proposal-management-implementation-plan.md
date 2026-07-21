@@ -6,11 +6,13 @@
 
 ## Status
 
-Product Owner Approved
+Product Owner Approved — amended 2026-07-21
 
 ## Purpose
 
 This ADR converts the approved Proposal Management architecture in ADR-017 into the authoritative incremental development roadmap for Capability 2.
+
+Platform roles, default capabilities, Quality Review, Executive Authorization, Business Justification, audit evidence, and business-record preservation follow ADR-019.
 
 Implementation must preserve:
 
@@ -34,6 +36,7 @@ No sprint may introduce Proposal pricing calculations, Agreement legal behavior,
 - Business state and outbox events commit atomically.
 - Normal Draft editing does not mutate immutable versions.
 - External delivery is idempotent and retry-safe.
+- Proposal submission is a single business-state transition; delivery is repeatable communication activity and never resubmits the Proposal.
 - Representations consume Proposal Versions and never become the source record.
 - Migrations are additive and forward-only.
 - Existing Pricing Workspace behavior remains a regression boundary.
@@ -46,10 +49,11 @@ flowchart LR
     ET[Engagement Type Configuration] --> D
     D --> DB[Proposal Persistence and Events]
     DB --> UI[Proposal Workspace]
-    UI --> V[Immutable Versioning]
-    V --> R[Web and PDF Representations]
+    UI --> V[Immutable Versioning and Review]
+    V --> S[Submit Proposal Once]
+    S --> R[Web and PDF Representations]
     R --> E[Email Delivery]
-    V --> A[Acceptance]
+    S --> A[Acceptance]
     A --> H[Agreement Handoff Contract]
     DB --> T[Platform Timeline Projection]
 ```
@@ -72,7 +76,7 @@ Freeze implementation contracts and reconcile existing platform identifiers befo
 
 ### Dependencies
 
-- ADR-016 and approved Pricing Project persistence.
+- ADR-016, ADR-021, and approved Pricing Project persistence.
 - ADR-017 approved policies.
 - existing Client, Company, User, and authentication boundaries.
 
@@ -80,8 +84,8 @@ Freeze implementation contracts and reconcile existing platform identifiers befo
 
 - Exactly one Pricing Project per Proposal.
 - Initial Engagement Types: Strategy Session, Advisory, Diagnostic, Project, Retainer.
-- 30-day default expiration with retained override reason.
-- Owner/Admin review bypass.
+- 30-day default expiration with retained exception rationale.
+- Quality Review and Founder/Admin Executive Authorization under ADR-019.
 - Proposal and representation separation.
 
 ### Numbering migration policy
@@ -132,7 +136,7 @@ Implement Proposal business rules without database, framework, rendering, or del
 5. Pricing source snapshot.
 6. commercial terms and business dates.
 7. recipient and authorized-recipient rules.
-8. expiration and override reason.
+8. expiration and retained exception rationale.
 9. submission and supersession.
 10. acceptance, verbal acceptance, withdrawal, and decline.
 11. domain event production.
@@ -254,11 +258,24 @@ Repositories require Company scope explicitly. Timeline repository additionally 
 - State change and outbox event commit atomically.
 - Timeline can rebuild deterministically from published events.
 
+## Sprint 3 and Sprint 4 ownership boundary
+
+Proposal submission is a business event. Proposal delivery and publication are communication and representation events. They have separate, exclusive sprint ownership.
+
+- Sprint 3 exclusively owns submission validation, the submission command, transition to `SUBMITTED`, immutable binding of the submitted Proposal Version, and creation of the one Proposal Submission Event.
+- Each Proposal transitions to `SUBMITTED` exactly once and creates one permanent Submission Event. Later delivery, retry, redelivery, or representation work never constitutes another submission.
+- Sprint 3 ends when the Proposal and Submission Event have committed atomically in `SUBMITTED` state. It performs no delivery, representation generation, publication, delivery tracking, or read-receipt work.
+- Sprint 4 starts from an already-submitted Proposal. It owns representations, publication, delivery attempts, communication tracking, read receipts, retries, and delivery idempotency.
+- Delivery may occur multiple times through retries, channels, or authorized redelivery. Each attempt creates communication history and never creates another Submission Event.
+- Proposal lifecycle state belongs to the Proposal aggregate and Sprint 3 submission boundary. Representation and delivery state belongs to Sprint 4 metadata and cannot mutate or redefine Proposal submission state.
+
+Sprint 4 portal-publication ownership defines where publication belongs if exercised. It does not authorize the separately deferred Client Portal UI, API, self-service acceptance, or mobile capabilities.
+
 ## Sprint 3 — Application services and internal Proposal workspace
 
 ### Objective
 
-Deliver the internal workflow for creating, editing, reviewing, versioning, and reopening Proposals.
+Deliver the internal workflow for creating, editing, reviewing, versioning, reopening, validating, and submitting Proposals through the single business submission boundary.
 
 ### Application implementation order
 
@@ -266,11 +283,13 @@ Deliver the internal workflow for creating, editing, reviewing, versioning, and 
 2. create Proposal from one approved Pricing output.
 3. edit working Draft content and commercial terms.
 4. manage multiple recipients and authorized-recipient designation.
-5. calculate default expiration and record override reason.
+5. calculate default expiration and record the exception rationale when changed.
 6. explicitly Save Version.
-7. request/complete Internal Review.
-8. Owner/Admin direct-submission authorization policy.
+7. request/complete Quality Review with reviewer independence.
+8. Founder/Admin Executive Authorization with Business Justification and audit evidence.
 9. reopen Draft and create revision from an immutable version.
+10. validate submission eligibility and bind the selected immutable Proposal Version.
+11. execute the submission command, transition to `SUBMITTED`, and persist the single Submission Event atomically.
 
 ### UI implementation order
 
@@ -283,8 +302,9 @@ Deliver the internal workflow for creating, editing, reviewing, versioning, and 
 7. calculation-free offer summary.
 8. validation errors and warnings.
 9. version history.
-10. internal review and submission readiness.
-11. Proposal detail and Client-history links.
+10. Quality Review, Executive Authorization, and submission validation.
+11. explicit Submit action and submitted-version confirmation.
+12. Proposal detail and Client-history links.
 
 ### UX requirements
 
@@ -293,7 +313,7 @@ Deliver the internal workflow for creating, editing, reviewing, versioning, and 
 - Save Draft and Save Version have distinct language;
 - immutable versions cannot appear editable;
 - warnings are visually distinct from blocking errors;
-- business dates and expiration override reason are clear;
+- business dates and expiration exception rationale are clear;
 - responsive desktop and tablet workflow.
 
 ### Dependencies
@@ -308,6 +328,8 @@ Deliver the internal workflow for creating, editing, reviewing, versioning, and 
 - form validation tests;
 - component tests where valuable;
 - end-to-end create/edit/save/reopen/version/review workflow;
+- submission validation, authorization, concurrency, and atomic event tests;
+- end-to-end review-to-`SUBMITTED` workflow with no delivery side effect;
 - pricing-model regression matrix;
 - accessibility and responsive checks.
 
@@ -323,24 +345,30 @@ Deliver the internal workflow for creating, editing, reviewing, versioning, and 
 - Draft can be saved, reopened, and edited.
 - Save Version creates an immutable version and normal Draft saves do not.
 - Pricing, methodology, and configuration snapshots remain unchanged.
-- Owner/Admin can use approved review bypass; other users cannot.
+- Founder/Admin can use Executive Authorization with Business Justification; Members cannot.
+- Founder/Admin can perform Quality Review, but no Proposal creator can review their own Proposal.
+- Submission validation fails without partial state or events.
+- The submission command binds one immutable Proposal Version, transitions the Proposal to `SUBMITTED`, and creates exactly one Submission Event atomically.
+- Completing Sprint 3 performs no representation generation, portal publication, email delivery, delivery tracking, or read-receipt work.
 - Existing Pricing Workspace remains fully operational.
 
 ## Sprint 4 — Representations and delivery
 
 ### Objective
 
-Generate reproducible Internal Web and PDF representations and deliver Proposal email without making any representation the source of truth.
+Consume an existing `SUBMITTED` Proposal to generate reproducible representations, publish or deliver them through approved channels, and track communication without making representation state the source of Proposal business state.
 
 ### Implementation order
 
-1. representation-neutral Proposal document model.
-2. deterministic Web renderer.
-3. deterministic PDF renderer using the same document model.
-4. representation checksum and renderer-version metadata.
-5. email delivery adapter and templated message.
-6. idempotent delivery attempts and retry handling.
-7. submission event and immutable submitted-version binding.
+1. load the immutable submitted Proposal Version without a Proposal-state mutation.
+2. representation-neutral Proposal document model.
+3. deterministic HTML/Internal Web renderer.
+4. deterministic PDF renderer using the same document model.
+5. representation checksum and renderer-version metadata.
+6. portal-publication adapter and metadata boundary for approved publication channels.
+7. email delivery adapter and templated message.
+8. delivery-attempt tracking, read receipts, and communication history.
+9. idempotent delivery, publication, and retry behavior.
 
 ### Integration points
 
@@ -358,7 +386,8 @@ Generate reproducible Internal Web and PDF representations and deliver Proposal 
 - representation regeneration from immutable version;
 - email adapter contract tests;
 - idempotency and retry tests;
-- submission concurrency tests;
+- repeated-delivery and multi-channel tests proving no additional Submission Event is created;
+- tests proving representation, delivery, publication, and read-receipt updates cannot mutate Proposal lifecycle state;
 - security tests preventing Draft exposure.
 
 ### Risks
@@ -373,7 +402,9 @@ Generate reproducible Internal Web and PDF representations and deliver Proposal 
 - Internal Web View and PDF regenerate from the same immutable Proposal Version.
 - Representations display identical material pricing and commercial terms.
 - Email delivery references the submitted immutable version.
-- Retrying delivery does not duplicate the business submission event.
+- Portal publication, when an approved channel is enabled, references the same submitted immutable version.
+- Delivery may be attempted more than once, but retry, redelivery, publication, and read receipts never create a second Submission Event.
+- Delivery and representation metadata never transition or redefine Proposal state.
 - Proposal remains usable if a representation provider is temporarily unavailable.
 
 ## Sprint 5 — Client decisions, lifecycle completion, and Timeline
@@ -397,7 +428,7 @@ Complete Proposal acceptance, verbal acceptance, withdrawal, decline, expiration
 
 ### Dependencies
 
-- submitted immutable versions from Sprint 4.
+- submitted immutable versions and the Submission Event from Sprint 3.
 - Agreement execution status exposed through a narrow future integration contract.
 - Timeline event/outbox foundation from Sprint 2.
 
@@ -465,9 +496,10 @@ Validate Proposal Management as a complete operational capability and prepare it
 - Draft save/reopen/edit.
 - validation failure retains form values.
 - Save Version and prove immutability.
-- review and authorized bypass.
-- submit through Web/PDF/email.
-- regenerate representation.
+- Quality Review and Executive Authorization.
+- submit once without delivery.
+- generate and deliver Web/PDF/email representations from the submitted version.
+- retry delivery and regenerate representation without creating another Submission Event.
 - accept by authorized recipient.
 - record verbal acceptance.
 - withdraw before Agreement execution.
@@ -524,7 +556,7 @@ Validate Proposal Management as a complete operational capability and prepare it
 
 ### Pricing
 
-Read one approved Pricing Project output and freeze it. Never call calculation functions from Proposal Management.
+Read the current approved immutable Pricing Version from a `QUOTED` Pricing Project under ADR-021 and freeze its identity and commercial snapshot. Never call calculation functions or Pricing approval mutations from Proposal Management.
 
 ### Client and Contacts
 
@@ -532,7 +564,9 @@ Reference platform identities and snapshot only presentation data required to re
 
 ### Authentication and authorization
 
-Use the authenticated Application User and Company scope. Implement Owner/Admin bypass behind an authorization policy interface so future permissions replace the policy cleanly.
+Use the authenticated Application User and Company scope. Implement ADR-019 role defaults behind a capability-oriented authorization policy interface. Quality Review enforces reviewer independence. Executive Authorization is limited to Founder/Admin, requires Business Justification, and records the authorized individual, submission method, review method, and permanent audit evidence.
+
+The frozen Sprint 0 machine code `INTERNAL_REVIEW` remains a compatibility code for the business-facing Quality Review state until an explicitly governed contract migration occurs. New application and user-interface language uses “Quality Review.”
 
 ### Platform Timeline
 
@@ -573,7 +607,7 @@ Recommended commits:
 6. internal Proposal workspace.
 7. immutable versioning UI.
 8. Web/PDF renderers.
-9. email submission.
+9. representation publication and email delivery.
 10. acceptance and lifecycle completion.
 11. Timeline projection.
 12. documentation and release validation.
@@ -587,14 +621,14 @@ If pull requests are used:
 1. Domain and contracts.
 2. Persistence, migrations, events, and Timeline foundation.
 3. Internal authoring and versioning.
-4. representations and submission.
+4. representations, publication, and delivery.
 5. acceptance, lifecycle, Timeline, and hardening.
 
 Avoid a single Proposal Management pull request unless repository governance explicitly requires it.
 
 ## Technical debt intentionally deferred
 
-- permission-based authorization replacing Owner/Admin policy;
+- capability expansion beyond the ADR-019 default role capabilities;
 - Client Portal/API/mobile representations;
 - online self-service acceptance;
 - Proposal Packages and Proposal Sections;
@@ -634,3 +668,6 @@ Proposal Management is complete when:
 - ADR-015: Application Users Belong to One Company Workspace
 - ADR-016: Shared Pricing Project With Explicit Pricing Models
 - ADR-017: Proposal Management Business Architecture
+- ADR-019: Platform Governance & Decision Authority
+- ADR-020: Platform Role Administration & Founder Bootstrap
+- ADR-021: Pricing Approval & QUOTED Lifecycle

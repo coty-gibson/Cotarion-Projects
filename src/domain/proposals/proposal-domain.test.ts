@@ -167,6 +167,18 @@ function expectDomainError(action: () => unknown, code: ProposalDomainError["cod
 }
 
 describe("Proposal aggregate", () => {
+  it("rehydrates the complete persistence state without losing revision history", () => {
+    const proposal = createProposal();
+    prepareVersion(proposal);
+    const rehydrated = ProposalAggregate.rehydrate(
+      proposal.persistenceState,
+      engagementTypePolicy("PROJECT")
+    );
+
+    expect(rehydrated.persistenceState).toEqual(proposal.persistenceState);
+    expect(rehydrated.state).toEqual(proposal.state);
+  });
+
   it("creates a Consulting Proposal with a 30-day default expiration and event", () => {
     const proposal = createProposal();
 
