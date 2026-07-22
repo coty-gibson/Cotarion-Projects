@@ -9,6 +9,13 @@ import {
   isValidMajorRecordNumber
 } from "@/domain/proposals/contracts";
 import type { EngagementTypePolicyV1 } from "@/domain/proposals/engagement-type-policies";
+import {
+  ProposalNumber,
+  ProposalTitle,
+  ProposalValueError,
+  ProposalVersionNumber,
+  type ProposalVersionStatus
+} from "@/domain/proposals/proposal-value-objects";
 
 export type ProposalDomainErrorCode =
   | "IDENTITY_INVALID"
@@ -22,6 +29,8 @@ export type ProposalDomainErrorCode =
   | "VERSION_REQUIRED"
   | "VERSION_STALE"
   | "REVIEW_TRANSITION_INVALID"
+  | "REVIEWER_NOT_INDEPENDENT"
+  | "BUSINESS_JUSTIFICATION_REQUIRED"
   | "SUBMISSION_NOT_AUTHORIZED"
   | "SUBMISSION_TRANSITION_INVALID"
   | "AUTHORIZED_RECIPIENT_REQUIRED"
@@ -128,15 +137,19 @@ export interface ProposalState {
   readonly closedAt: string | null;
   readonly updatedAt: string;
   readonly workingDraft: ProposalWorkingDraft;
+  readonly draftRevision: number;
+  readonly versionDraftRevision: number | null;
   readonly versions: readonly ProposalVersion[];
   readonly currentVersionId: string | null;
   readonly submittedVersionId: string | null;
+  readonly qualityReviewRequestedByUserId: string | null;
   readonly revisionOpen: boolean;
   readonly acceptances: readonly ProposalAcceptance[];
   readonly currentAcceptanceId: string | null;
   readonly acceptanceWithdrawals: readonly ProposalAcceptanceWithdrawal[];
   readonly executedAgreementId: string | null;
   readonly supersededByProposalId: string | null;
+  readonly supersedesProposalId: string | null;
   readonly events: readonly ProposalBusinessEventV1[];
 }
 
@@ -156,6 +169,24 @@ export interface CreateProposalInput {
 export interface SaveProposalVersionInput {
   readonly versionId: string;
   readonly revisionReason?: string;
+}
+
+export type ProposalSubmissionAuthorization =
+  | { readonly method: "QUALITY_REVIEW"; readonly reviewerUserId: string }
+  | {
+      readonly method: "EXECUTIVE_AUTHORIZATION";
+      readonly authorizedByUserId: string;
+      readonly businessJustification: string;
+    };
+
+export interface CreateReplacementProposalInput {
+  readonly id: string;
+  readonly proposalNumber: string;
+  readonly ownerId: string;
+  readonly pricingSnapshot?: ProposalPricingSnapshot;
+  readonly title?: string;
+  readonly expirationAt?: string;
+  readonly expirationOverrideReason?: string;
 }
 
 interface MutableProposalState {
@@ -180,12 +211,14 @@ interface MutableProposalState {
   versions: ProposalVersion[];
   currentVersionId: string | null;
   submittedVersionId: string | null;
+  qualityReviewRequestedByUserId: string | null;
   revisionOpen: boolean;
   acceptances: ProposalAcceptance[];
   currentAcceptanceId: string | null;
   acceptanceWithdrawals: ProposalAcceptanceWithdrawal[];
   executedAgreementId: string | null;
   supersededByProposalId: string | null;
+  supersedesProposalId: string | null;
   events: ProposalBusinessEventV1[];
 }
 
@@ -247,11 +280,16 @@ export class ProposalAggregate {
     const createdAt = new Date(
       validDate(context.occurredAt, "IDENTITY_INVALID", "Created timestamp is invalid.")
     ).toISOString();
-    if (!isValidMajorRecordNumber("PROPOSAL", input.proposalNumber)) {
-      throw new ProposalDomainError(
-        "IDENTITY_INVALID",
-        "Proposal number must use the permanent PRO-###### format."
-      );
+    let proposalNumber: string;
+    let title: string;
+    try {
+      proposalNumber = ProposalNumber.create(input.proposalNumber).value;
+      title = ProposalTitle.create(input.title).value;
+    } catch (error) {
+      if (error instanceof ProposalValueError) {
+        throw new ProposalDomainError("IDENTITY_INVALID", error.message);
+      }
+      throw error;
     }
     requireText(input.id, "Proposal identity is required.");
     requireText(input.companyId, "Company identity is required.");
@@ -311,7 +349,7 @@ export class ProposalAggregate {
     const state: MutableProposalState = {
       contractVersion: PROPOSAL_CONTRACT_VERSION,
       id: input.id,
-      proposalNumber: input.proposalNumber,
+      proposalNumber,
       companyId: input.companyId,
       clientId: input.clientId,
       ownerId: input.ownerId,
@@ -325,14 +363,14 @@ export class ProposalAggregate {
       closedAt: null,
       updatedAt: createdAt,
       workingDraft: deepFreeze({
-        title: requireText(input.title, "Proposal title is required."),
+        title,
         engagementTypeCode: input.engagementTypePolicy.code,
         engagementTypePolicyVersion: input.engagementTypePolicy.policyVersion,
         expirationAt,
         expirationOverrideReason,
         content: {
           schemaVersion: PROPOSAL_CONTENT_SCHEMA_VERSION,
-          title: input.title.trim(),
+          title,
           sections: []
         },
         commercialTerms: EMPTY_TERMS,
@@ -343,17 +381,70 @@ export class ProposalAggregate {
       versions: [],
       currentVersionId: null,
       submittedVersionId: null,
+      qualityReviewRequestedByUserId: null,
       revisionOpen: false,
       acceptances: [],
       currentAcceptanceId: null,
       acceptanceWithdrawals: [],
       executedAgreementId: null,
       supersededByProposalId: null,
+      supersedesProposalId: null,
       events: []
     };
     const aggregate = new ProposalAggregate(state, deepFreeze(clone(input.engagementTypePolicy)));
     aggregate.recordEvent("PROPOSAL_CREATED", context, "Proposal created.", {});
     return aggregate;
+  }
+
+  static createReplacement(
+    source: ProposalAggregate,
+    input: CreateReplacementProposalInput,
+    context: ProposalCommandContext
+  ) {
+    if (!["SUBMITTED", "VIEWED", "ACCEPTED", "DECLINED", "EXPIRED"].includes(source.stateValue.status)) {
+      throw new ProposalDomainError(
+        "SUPERSESSION_INVALID",
+        "Only a submitted, viewed, accepted, declined, or expired Proposal may be replaced."
+      );
+    }
+    if (source.stateValue.executedAgreementId) {
+      throw new ProposalDomainError(
+        "SUPERSESSION_INVALID",
+        "A Proposal with an executed Agreement cannot be replaced."
+      );
+    }
+    const sourceVersion = source.submittedVersion();
+    const replacement = ProposalAggregate.create(
+      {
+        id: input.id,
+        proposalNumber: input.proposalNumber,
+        companyId: source.stateValue.companyId,
+        clientId: source.stateValue.clientId,
+        ownerId: input.ownerId,
+        engagementTypePolicy: source.engagementPolicy,
+        pricingSnapshot: input.pricingSnapshot ?? source.stateValue.pricingSnapshot,
+        title: input.title ?? sourceVersion.draft.title,
+        expirationAt: input.expirationAt,
+        expirationOverrideReason: input.expirationOverrideReason
+      },
+      context
+    );
+    replacement.stateValue.supersedesProposalId = source.stateValue.id;
+    replacement.stateValue.workingDraft = deepFreeze({
+      ...clone(sourceVersion.draft),
+      title: input.title ? ProposalTitle.create(input.title).value : sourceVersion.draft.title,
+      content: {
+        ...clone(sourceVersion.draft.content),
+        title: input.title ? ProposalTitle.create(input.title).value : sourceVersion.draft.title
+      },
+      expirationAt: replacement.stateValue.workingDraft.expirationAt,
+      expirationOverrideReason: replacement.stateValue.workingDraft.expirationOverrideReason
+    });
+    replacement.stateValue.events[0] = deepFreeze({
+      ...replacement.stateValue.events[0],
+      metadata: eventMetadata({ supersedesProposalId: source.stateValue.id })
+    });
+    return replacement;
   }
 
   static rehydrate(state: PersistedProposalState, engagementPolicy: EngagementTypePolicyV1) {
@@ -372,21 +463,36 @@ export class ProposalAggregate {
     if (!isValidMajorRecordNumber("PROPOSAL", state.proposalNumber)) {
       throw new ProposalDomainError("IDENTITY_INVALID", "Persisted Proposal number is invalid.");
     }
-    return new ProposalAggregate(clone(state) as MutableProposalState, deepFreeze(clone(engagementPolicy)));
+    return new ProposalAggregate(
+      {
+        ...(clone(state) as MutableProposalState),
+        qualityReviewRequestedByUserId: state.qualityReviewRequestedByUserId ?? null,
+        supersedesProposalId: state.supersedesProposalId ?? null
+      },
+      deepFreeze(clone(engagementPolicy))
+    );
   }
 
   get state(): ProposalState {
-    return deepFreeze(
-      clone({
-        ...this.stateValue,
-        draftRevision: undefined,
-        versionDraftRevision: undefined
-      })
-    ) as unknown as ProposalState;
+    return deepFreeze(clone(this.stateValue)) as ProposalState;
   }
 
   get persistenceState(): PersistedProposalState {
     return deepFreeze(clone(this.stateValue));
+  }
+
+  proposalVersionStatus(versionId: string): ProposalVersionStatus {
+    if (!this.stateValue.versions.some((version) => version.versionId === versionId)) {
+      throw new ProposalDomainError("VERSION_REQUIRED", "Proposal Version is unavailable.");
+    }
+    return this.stateValue.submittedVersionId === versionId ? "SUBMITTED" : "SAVED";
+  }
+
+  currentVersionRepresentsWorkingDraft() {
+    return (
+      this.currentVersion() !== null &&
+      this.stateValue.versionDraftRevision === this.stateValue.draftRevision
+    );
   }
 
   updateDraft(
@@ -419,42 +525,25 @@ export class ProposalAggregate {
         "Changing Proposal expiration requires a reason."
       );
     }
+    let title = this.stateValue.workingDraft.title;
+    if (update.title !== undefined) {
+      try {
+        title = ProposalTitle.create(update.title).value;
+      } catch (error) {
+        if (error instanceof ProposalValueError) {
+          throw new ProposalDomainError("IDENTITY_INVALID", error.message);
+        }
+        throw error;
+      }
+    }
     this.stateValue.workingDraft = deepFreeze({
       ...clone(this.stateValue.workingDraft),
       ...clone(update),
-      title: update.title
-        ? requireText(update.title, "Proposal title is required.")
-        : this.stateValue.workingDraft.title,
+      title,
       expirationAt: nextExpiration,
       expirationOverrideReason: overrideReason
     });
     this.stateValue.draftRevision += 1;
-    this.touch(occurredAt);
-  }
-
-  beginRevision(occurredAt: string) {
-    this.assertTimestampNotBeforeUpdated(occurredAt);
-    if (
-      !["SUBMITTED", "VIEWED", "ACCEPTED", "DECLINED", "EXPIRED"].includes(
-        this.stateValue.status
-      ) ||
-      !this.currentVersion()
-    ) {
-      throw new ProposalDomainError(
-        "DRAFT_NOT_EDITABLE",
-        "Only a versioned Proposal may begin a revision."
-      );
-    }
-    if (this.stateValue.executedAgreementId) {
-      throw new ProposalDomainError(
-        "DRAFT_NOT_EDITABLE",
-        "An executed Agreement prevents Proposal revision."
-      );
-    }
-    this.stateValue.workingDraft = deepFreeze(clone(this.currentVersion()!.draft));
-    this.stateValue.revisionOpen = true;
-    this.stateValue.draftRevision += 1;
-    this.stateValue.versionDraftRevision = null;
     this.touch(occurredAt);
   }
 
@@ -471,7 +560,7 @@ export class ProposalAggregate {
     const version: ProposalVersion = deepFreeze({
       versionId: input.versionId,
       proposalId: this.stateValue.id,
-      versionNumber: this.stateValue.versions.length + 1,
+      versionNumber: ProposalVersionNumber.create(this.stateValue.versions.length + 1).value,
       createdAt: new Date(
         validDate(context.occurredAt, "IDENTITY_INVALID", "Version timestamp is invalid.")
       ).toISOString(),
@@ -493,21 +582,122 @@ export class ProposalAggregate {
     return version;
   }
 
-  requestInternalReview(context: ProposalCommandContext) {
+  attachPricingVersion(snapshot: ProposalPricingSnapshot, context: ProposalCommandContext) {
     this.assertEventContext(context);
-    this.requireCurrentVersion();
-    if (this.stateValue.status !== "DRAFT" && !this.stateValue.revisionOpen) {
+    this.requireDraftEditable();
+    if (snapshot.schemaVersion !== 2 || !snapshot.pricingVersionId.trim()) {
+      throw new ProposalDomainError(
+        "PRICING_SOURCE_INELIGIBLE",
+        "Proposal requires an exact immutable Pricing Version."
+      );
+    }
+    if (snapshot.companyId !== this.stateValue.companyId) {
+      throw new ProposalDomainError("COMPANY_MISMATCH", "Pricing Version and Proposal must belong to the same Company.");
+    }
+    if (snapshot.clientId !== this.stateValue.clientId) {
+      throw new ProposalDomainError("CLIENT_MISMATCH", "Pricing Version and Proposal must belong to the same Client.");
+    }
+    if (snapshot.sourceStatus !== "QUOTED") {
+      throw new ProposalDomainError("PRICING_SOURCE_INELIGIBLE", "Proposal requires an approved quoted Pricing Version.");
+    }
+    this.stateValue.pricingSnapshot = deepFreeze(clone(snapshot));
+    this.stateValue.draftRevision += 1;
+    this.recordEvent(
+      "PROPOSAL_PRICING_VERSION_ATTACHED",
+      context,
+      `Pricing Version ${snapshot.pricingVersionNumber} attached.`,
+      eventMetadata({
+        pricingProjectId: snapshot.pricingProjectId,
+        pricingVersionId: snapshot.pricingVersionId,
+        pricingVersionNumber: snapshot.pricingVersionNumber
+      })
+    );
+  }
+
+  requestQualityReview(context: ProposalCommandContext) {
+    this.assertEventContext(context);
+    const version = this.requireCurrentVersion();
+    if (this.stateValue.status !== "DRAFT") {
       throw new ProposalDomainError(
         "REVIEW_TRANSITION_INVALID",
-        "Only an editable Proposal may enter Internal Review."
+        "Only a Draft Proposal may enter Quality Review."
       );
     }
     this.stateValue.status = "INTERNAL_REVIEW";
+    this.stateValue.qualityReviewRequestedByUserId = context.responsibleUserId;
     this.recordEvent(
       "PROPOSAL_INTERNAL_REVIEW_REQUESTED",
       context,
-      "Proposal submitted for Internal Review.",
-      {}
+      "Proposal submitted for Quality Review.",
+      eventMetadata({
+        proposalVersionId: version.versionId,
+        reviewMethod: "QUALITY_REVIEW",
+        requestedByUserId: context.responsibleUserId
+      })
+    );
+  }
+
+  submitForExecutiveAuthorization(context: ProposalCommandContext) {
+    this.assertEventContext(context);
+    const version = this.requireCurrentVersion();
+    if (this.stateValue.status !== "INTERNAL_REVIEW") {
+      throw new ProposalDomainError(
+        "REVIEW_TRANSITION_INVALID",
+        "Executive Authorization requires a Proposal in Internal Review."
+      );
+    }
+    if (version.createdByUserId === context.responsibleUserId) {
+      throw new ProposalDomainError(
+        "REVIEWER_NOT_INDEPENDENT",
+        "A Proposal Version creator cannot complete Internal Review."
+      );
+    }
+    this.stateValue.status = "EXECUTIVE_AUTHORIZATION";
+    this.stateValue.qualityReviewRequestedByUserId = null;
+    this.recordEvent(
+      "PROPOSAL_EXECUTIVE_AUTHORIZATION_REQUESTED",
+      context,
+      "Proposal submitted for Executive Authorization.",
+      eventMetadata({ proposalVersionId: version.versionId })
+    );
+  }
+
+  approveProposal(context: ProposalCommandContext) {
+    this.assertEventContext(context);
+    const version = this.requireCurrentVersion();
+    if (this.stateValue.status !== "EXECUTIVE_AUTHORIZATION") {
+      throw new ProposalDomainError(
+        "SUBMISSION_TRANSITION_INVALID",
+        "Only a Proposal awaiting Executive Authorization may be approved."
+      );
+    }
+    this.stateValue.status = "APPROVED";
+    this.stateValue.submittedVersionId = version.versionId;
+    this.stateValue.effectiveAt = context.occurredAt;
+    this.recordEvent(
+      "PROPOSAL_APPROVED",
+      context,
+      `Proposal Version ${version.versionNumber} approved.`,
+      eventMetadata({ proposalVersionId: version.versionId })
+    );
+  }
+
+  rejectProposal(context: ProposalCommandContext) {
+    this.assertEventContext(context);
+    if (this.stateValue.status !== "INTERNAL_REVIEW" && this.stateValue.status !== "EXECUTIVE_AUTHORIZATION") {
+      throw new ProposalDomainError(
+        "REVIEW_TRANSITION_INVALID",
+        "Proposal may be rejected only during Internal Review or Executive Authorization."
+      );
+    }
+    const version = this.requireCurrentVersion();
+    this.stateValue.status = "REJECTED";
+    this.stateValue.closedAt = context.occurredAt;
+    this.recordEvent(
+      "PROPOSAL_REJECTED",
+      context,
+      `Proposal Version ${version.versionNumber} rejected.`,
+      eventMetadata({ proposalVersionId: version.versionId })
     );
   }
 
@@ -516,30 +706,83 @@ export class ProposalAggregate {
     if (this.stateValue.status !== "INTERNAL_REVIEW") {
       throw new ProposalDomainError(
         "REVIEW_TRANSITION_INVALID",
-        "Changes can be requested only during Internal Review."
+        "Changes can be requested only during Quality Review."
+      );
+    }
+    const version = this.requireCurrentVersion();
+    if (version.createdByUserId === context.responsibleUserId) {
+      throw new ProposalDomainError(
+        "REVIEWER_NOT_INDEPENDENT",
+        "A Proposal Version creator cannot review their own work."
       );
     }
     this.stateValue.status = "DRAFT";
-    this.stateValue.revisionOpen = true;
-    this.recordEvent("PROPOSAL_CHANGES_REQUESTED", context, "Proposal changes requested.", {});
+    this.stateValue.qualityReviewRequestedByUserId = null;
+    this.recordEvent(
+      "PROPOSAL_CHANGES_REQUESTED",
+      context,
+      "Proposal changes requested during Quality Review.",
+      eventMetadata({ proposalVersionId: version.versionId, reviewMethod: "QUALITY_REVIEW" })
+    );
   }
 
-  submit(context: ProposalCommandContext, canBypassInternalReview: boolean) {
+  submit(context: ProposalCommandContext, authorization: ProposalSubmissionAuthorization) {
     this.assertEventContext(context);
     const version = this.requireCurrentVersion();
-    const reviewed = this.stateValue.status === "INTERNAL_REVIEW";
-    const directSubmission =
-      canBypassInternalReview &&
-      (this.stateValue.status === "DRAFT" ||
-        this.stateValue.revisionOpen ||
-        ["SUBMITTED", "VIEWED", "ACCEPTED", "DECLINED", "EXPIRED"].includes(
-          this.stateValue.status
-        ));
-    if (!reviewed && !directSubmission) {
+    if (this.stateValue.submittedVersionId) {
       throw new ProposalDomainError(
-        canBypassInternalReview ? "SUBMISSION_TRANSITION_INVALID" : "SUBMISSION_NOT_AUTHORIZED",
-        "Proposal must complete Internal Review unless the actor may bypass it."
+        "SUBMISSION_TRANSITION_INVALID",
+        "Each Proposal may be submitted exactly once. Create a replacement Proposal for revisions."
       );
+    }
+    let businessJustification: string | null = null;
+    if (authorization.method === "QUALITY_REVIEW") {
+      if (this.stateValue.status !== "INTERNAL_REVIEW") {
+        throw new ProposalDomainError(
+          "SUBMISSION_NOT_AUTHORIZED",
+          "Quality Review submission requires a Proposal in Quality Review."
+        );
+      }
+      const reviewerUserId = requireText(
+        authorization.reviewerUserId,
+        "Quality reviewer identity is required."
+      );
+      if (reviewerUserId !== context.responsibleUserId) {
+        throw new ProposalDomainError(
+          "SUBMISSION_NOT_AUTHORIZED",
+          "The responsible user must be the identified Quality reviewer."
+        );
+      }
+      if (reviewerUserId === version.createdByUserId) {
+        throw new ProposalDomainError(
+          "REVIEWER_NOT_INDEPENDENT",
+          "A Proposal Version creator cannot complete Quality Review on their own Proposal."
+        );
+      }
+    } else {
+      if (this.stateValue.status !== "DRAFT") {
+        throw new ProposalDomainError(
+          "SUBMISSION_TRANSITION_INVALID",
+          "Executive Authorization applies only to a Draft Proposal."
+        );
+      }
+      const authorizedByUserId = requireText(
+        authorization.authorizedByUserId,
+        "Executive Authorization author identity is required."
+      );
+      if (authorizedByUserId !== context.responsibleUserId) {
+        throw new ProposalDomainError(
+          "SUBMISSION_NOT_AUTHORIZED",
+          "The responsible user must be the identified Executive Authorization author."
+        );
+      }
+      businessJustification = authorization.businessJustification.trim();
+      if (!businessJustification) {
+        throw new ProposalDomainError(
+          "BUSINESS_JUSTIFICATION_REQUIRED",
+          "Executive Authorization requires Business Justification."
+        );
+      }
     }
     if (this.stateValue.versionDraftRevision !== this.stateValue.draftRevision) {
       throw new ProposalDomainError(
@@ -559,28 +802,23 @@ export class ProposalAggregate {
         "An expired Proposal Version cannot be submitted."
       );
     }
-    if (this.stateValue.status === "ACCEPTED" && this.stateValue.executedAgreementId) {
-      throw new ProposalDomainError(
-        "SUBMISSION_TRANSITION_INVALID",
-        "An accepted Proposal with an executed Agreement cannot be replaced."
-      );
-    }
-
-    const priorSubmittedVersionId = this.stateValue.submittedVersionId;
     this.stateValue.submittedVersionId = version.versionId;
     this.stateValue.status = "SUBMITTED";
     this.stateValue.effectiveAt = context.occurredAt;
     this.stateValue.closedAt = null;
     this.stateValue.revisionOpen = false;
-    this.stateValue.currentAcceptanceId = null;
-    this.stateValue.executedAgreementId = null;
+    this.stateValue.qualityReviewRequestedByUserId = null;
     this.recordEvent(
       "PROPOSAL_SUBMITTED",
       context,
       `Proposal Version ${version.versionNumber} submitted.`,
       eventMetadata({
         proposalVersionId: version.versionId,
-        priorSubmittedVersionId
+        submissionMethod: authorization.method,
+        reviewMethod: authorization.method,
+        authorizedByUserId: context.responsibleUserId,
+        businessJustification,
+        supersedesProposalId: this.stateValue.supersedesProposalId
       })
     );
   }
@@ -719,7 +957,7 @@ export class ProposalAggregate {
     this.recordEvent("PROPOSAL_EXPIRED", context, "Proposal expired.", {});
   }
 
-  supersede(replacementProposalId: string, context: ProposalCommandContext) {
+  supersedeBy(replacement: ProposalAggregate, context: ProposalCommandContext) {
     this.assertEventContext(context);
     if (!["SUBMITTED", "VIEWED", "ACCEPTED"].includes(this.stateValue.status)) {
       throw new ProposalDomainError(
@@ -733,6 +971,18 @@ export class ProposalAggregate {
         "A Proposal with an executed Agreement cannot be superseded."
       );
     }
+    if (
+      replacement.stateValue.status !== "SUBMITTED" ||
+      replacement.stateValue.supersedesProposalId !== this.stateValue.id ||
+      replacement.stateValue.companyId !== this.stateValue.companyId ||
+      replacement.stateValue.clientId !== this.stateValue.clientId
+    ) {
+      throw new ProposalDomainError(
+        "SUPERSESSION_INVALID",
+        "Supersession requires a submitted replacement Proposal for the same Company and Client."
+      );
+    }
+    const replacementProposalId = replacement.stateValue.id;
     this.stateValue.supersededByProposalId = requireText(
       replacementProposalId,
       "Replacement Proposal identity is required."
@@ -751,7 +1001,7 @@ export class ProposalAggregate {
   archive(context: ProposalCommandContext) {
     this.assertEventContext(context);
     if (
-      !["DRAFT", "INTERNAL_REVIEW", "DECLINED", "EXPIRED", "SUPERSEDED", "ACCEPTED"].includes(
+      !["DRAFT", "INTERNAL_REVIEW", "APPROVED", "REJECTED", "DECLINED", "EXPIRED", "SUPERSEDED", "ACCEPTED"].includes(
         this.stateValue.status
       )
     ) {
@@ -830,11 +1080,7 @@ export class ProposalAggregate {
   }
 
   private requireDraftEditable() {
-    if (
-      this.stateValue.status === "ARCHIVED" ||
-      this.stateValue.status === "SUPERSEDED" ||
-      (this.stateValue.status !== "DRAFT" && !this.stateValue.revisionOpen)
-    ) {
+    if (this.stateValue.status !== "DRAFT") {
       throw new ProposalDomainError(
         "DRAFT_NOT_EDITABLE",
         "Proposal Draft is not editable in its current state."

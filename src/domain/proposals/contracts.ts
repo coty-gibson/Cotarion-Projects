@@ -7,6 +7,7 @@
 
 export const PROPOSAL_CONTRACT_VERSION = 1 as const;
 export const PRICING_SNAPSHOT_SCHEMA_VERSION = 1 as const;
+export const PRICING_SNAPSHOT_SCHEMA_VERSION_V2 = 2 as const;
 export const PROPOSAL_CONTENT_SCHEMA_VERSION = 1 as const;
 export const PLATFORM_EVENT_SCHEMA_VERSION = 1 as const;
 export const ENGAGEMENT_TYPE_POLICY_VERSION = 1 as const;
@@ -84,7 +85,13 @@ export interface ProposalPricingSnapshotV1 {
   readonly capturedAt: string;
 }
 
-export type ProposalPricingSnapshot = ProposalPricingSnapshotV1;
+export interface ProposalPricingSnapshotV2 extends Omit<ProposalPricingSnapshotV1, "schemaVersion"> {
+  readonly schemaVersion: typeof PRICING_SNAPSHOT_SCHEMA_VERSION_V2;
+  readonly pricingVersionId: string;
+  readonly pricingVersionNumber: number;
+}
+
+export type ProposalPricingSnapshot = ProposalPricingSnapshotV1 | ProposalPricingSnapshotV2;
 
 export interface ProposalContentSectionV1 {
   readonly sectionId: string;
@@ -113,6 +120,9 @@ export interface ProposalStructuredContentV1 {
 export const PROPOSAL_STATUSES = [
   "DRAFT",
   "INTERNAL_REVIEW",
+  "EXECUTIVE_AUTHORIZATION",
+  "APPROVED",
+  "REJECTED",
   "SUBMITTED",
   "VIEWED",
   "ACCEPTED",
@@ -128,6 +138,10 @@ export const PROPOSAL_EVENT_TYPES = [
   "PROPOSAL_CREATED",
   "PROPOSAL_VERSION_SAVED",
   "PROPOSAL_INTERNAL_REVIEW_REQUESTED",
+  "PROPOSAL_PRICING_VERSION_ATTACHED",
+  "PROPOSAL_EXECUTIVE_AUTHORIZATION_REQUESTED",
+  "PROPOSAL_APPROVED",
+  "PROPOSAL_REJECTED",
   "PROPOSAL_CHANGES_REQUESTED",
   "PROPOSAL_SUBMITTED",
   "PROPOSAL_VIEWED",

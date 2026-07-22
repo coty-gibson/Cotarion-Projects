@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PRICING_SNAPSHOT_SCHEMA_VERSION,
+  PRICING_SNAPSHOT_SCHEMA_VERSION_V2,
   type ProposalPricingSnapshot
 } from "@/domain/proposals/contracts";
 import { engagementTypePolicy } from "@/domain/proposals/engagement-type-policies";
@@ -13,13 +14,26 @@ import {
 
 function context(
   sequence: number,
-  occurredAt = `2026-07-${String(20 + sequence).padStart(2, "0")}T12:00:00.000Z`
+  occurredAt = `2026-07-${String(20 + sequence).padStart(2, "0")}T12:00:00.000Z`,
+  responsibleUserId = "user-owner"
 ): ProposalCommandContext {
   return {
     eventId: `event-${sequence}`,
     occurredAt,
-    responsibleUserId: "user-owner"
+    responsibleUserId
   };
+}
+
+function executiveAuthorization(businessJustification = "Founder approved the alternate path.") {
+  return {
+    method: "EXECUTIVE_AUTHORIZATION" as const,
+    authorizedByUserId: "user-owner",
+    businessJustification
+  };
+}
+
+function qualityReview(reviewerUserId = "user-reviewer") {
+  return { method: "QUALITY_REVIEW" as const, reviewerUserId };
 }
 
 function pricingSnapshot(
@@ -263,44 +277,131 @@ describe("Proposal aggregate", () => {
     expect(Object.isFrozen(first.pricingSnapshot)).toBe(true);
   });
 
-  it("requires a current immutable version before review or submission", () => {
-    const proposal = createProposal();
-    expectDomainError(() => proposal.requestInternalReview(context(1)), "VERSION_REQUIRED");
-    prepareVersion(proposal);
-    proposal.updateDraft({ title: "Unsaved edit" }, "2026-07-22T10:00:00.000Z");
-    expectDomainError(() => proposal.requestInternalReview(context(2)), "VERSION_STALE");
+  it("freezes the exact Pricing Version evidence selected by Proposal", () => {
+    const firstSnapshot: ProposalPricingSnapshot = {
+      ...pricingSnapshot(),
+      schemaVersion: PRICING_SNAPSHOT_SCHEMA_VERSION_V2,
+      pricingVersionId: "pricing-version-1",
+      pricingVersionNumber: 1
+    };
+    const proposal = createProposal("PROJECT", "PROJECT", { pricingSnapshot: firstSnapshot });
+    const first = prepareVersion(proposal);
+    const nextSnapshot: ProposalPricingSnapshot = {
+      ...firstSnapshot,
+      pricingVersionId: "pricing-version-2",
+      pricingVersionNumber: 2,
+      outputSnapshot: { ...firstSnapshot.outputSnapshot, finalAmount: "1200.00" }
+    } as ProposalPricingSnapshot;
+
+    proposal.attachPricingVersion(nextSnapshot, context(2));
+    const second = proposal.saveVersion({ versionId: "version-2" }, context(3));
+
+    expect(first.pricingSnapshot).toMatchObject({
+      pricingVersionId: "pricing-version-1",
+      pricingVersionNumber: 1
+    });
+    expect(second.pricingSnapshot).toMatchObject({
+      pricingVersionId: "pricing-version-2",
+      pricingVersionNumber: 2
+    });
+    expect(first.pricingSnapshot.outputSnapshot).not.toEqual(second.pricingSnapshot.outputSnapshot);
   });
 
-  it("supports Internal Review and authorized direct submission", () => {
+  it("requires a current immutable version before review or submission", () => {
+    const proposal = createProposal();
+    expectDomainError(() => proposal.requestQualityReview(context(1)), "VERSION_REQUIRED");
+    prepareVersion(proposal);
+    proposal.updateDraft({ title: "Unsaved edit" }, "2026-07-22T10:00:00.000Z");
+    expectDomainError(() => proposal.requestQualityReview(context(2)), "VERSION_STALE");
+  });
+
+  it("supports independent Quality Review and Executive Authorization", () => {
     const reviewed = createProposal();
     prepareVersion(reviewed);
-    reviewed.requestInternalReview(context(2));
-    reviewed.submit(context(3), false);
+    reviewed.requestQualityReview(context(2));
+    reviewed.submit(context(3, undefined, "user-reviewer"), qualityReview());
     expect(reviewed.state.status).toBe("SUBMITTED");
     expect(reviewed.state.effectiveAt).toBe(context(3).occurredAt);
 
     const bypassed = createProposal();
     prepareVersion(bypassed);
-    expectDomainError(() => bypassed.submit(context(2), false), "SUBMISSION_NOT_AUTHORIZED");
-    bypassed.submit(context(3), true);
+    expectDomainError(
+      () => bypassed.submit(context(2), qualityReview()),
+      "SUBMISSION_NOT_AUTHORIZED"
+    );
+    bypassed.submit(context(3), executiveAuthorization());
     expect(bypassed.state.status).toBe("SUBMITTED");
+  });
+
+  it("enforces reviewer independence and Executive Authorization evidence", () => {
+    const selfReviewed = createProposal();
+    prepareVersion(selfReviewed);
+    selfReviewed.requestQualityReview(context(2));
+    expectDomainError(
+      () => selfReviewed.submit(context(3), qualityReview("user-owner")),
+      "REVIEWER_NOT_INDEPENDENT"
+    );
+    expect(selfReviewed.state.status).toBe("INTERNAL_REVIEW");
+
+    const executive = createProposal();
+    prepareVersion(executive);
+    expectDomainError(
+      () => executive.submit(context(2), executiveAuthorization("  ")),
+      "BUSINESS_JUSTIFICATION_REQUIRED"
+    );
+    expect(executive.state.status).toBe("DRAFT");
+  });
+
+  it("binds the submitted version exactly once with complete governance metadata", () => {
+    const proposal = createProposal();
+    const version = prepareVersion(proposal);
+    proposal.submit(context(2), executiveAuthorization("Urgent Client procurement deadline."));
+
+    expect(proposal.state.submittedVersionId).toBe(version.versionId);
+    expect(proposal.proposalVersionStatus(version.versionId)).toBe("SUBMITTED");
+    expect(proposal.state.events.at(-1)).toEqual(
+      expect.objectContaining({
+        eventType: "PROPOSAL_SUBMITTED",
+        metadata: expect.objectContaining({
+          proposalVersionId: version.versionId,
+          submissionMethod: "EXECUTIVE_AUTHORIZATION",
+          reviewMethod: "EXECUTIVE_AUTHORIZATION",
+          authorizedByUserId: "user-owner",
+          businessJustification: "Urgent Client procurement deadline."
+        })
+      })
+    );
+    const before = proposal.state;
+    expectDomainError(
+      () => proposal.submit(context(3), executiveAuthorization()),
+      "SUBMISSION_TRANSITION_INVALID"
+    );
+    expect(proposal.state).toEqual(before);
+    expect(proposal.state.events.filter(({ eventType }) => eventType === "PROPOSAL_SUBMITTED"))
+      .toHaveLength(1);
   });
 
   it("requires an authorized recipient and prevents stale Draft submission", () => {
     const proposal = createProposal();
     proposal.saveVersion({ versionId: "version-1" }, context(1));
-    expectDomainError(() => proposal.submit(context(2), true), "AUTHORIZED_RECIPIENT_REQUIRED");
+    expectDomainError(
+      () => proposal.submit(context(2), executiveAuthorization()),
+      "AUTHORIZED_RECIPIENT_REQUIRED"
+    );
 
     const stale = createProposal();
     prepareVersion(stale);
     stale.updateDraft({ title: "Not versioned" }, "2026-07-22T10:00:00.000Z");
-    expectDomainError(() => stale.submit(context(3), true), "VERSION_STALE");
+    expectDomainError(
+      () => stale.submit(context(3), executiveAuthorization()),
+      "VERSION_STALE"
+    );
   });
 
   it("records Client acceptance only from an authorized recipient", () => {
     const proposal = createProposal();
     prepareVersion(proposal);
-    proposal.submit(context(2), true);
+    proposal.submit(context(2), executiveAuthorization());
     expectDomainError(
       () =>
         proposal.acceptByRecipient(
@@ -328,7 +429,7 @@ describe("Proposal aggregate", () => {
   it("requires complete immutable evidence for verbal acceptance", () => {
     const proposal = createProposal();
     prepareVersion(proposal);
-    proposal.submit(context(2), true);
+    proposal.submit(context(2), executiveAuthorization());
     expectDomainError(
       () =>
         proposal.recordVerbalAcceptance(
@@ -364,7 +465,7 @@ describe("Proposal aggregate", () => {
   it("withdraws acceptance before Agreement execution but never edits acceptance history", () => {
     const proposal = createProposal();
     prepareVersion(proposal);
-    proposal.submit(context(2), true);
+    proposal.submit(context(2), executiveAuthorization());
     proposal.recordViewed(context(3));
     proposal.acceptByRecipient(
       { acceptanceId: "acceptance-1", recipientId: "recipient-1" },
@@ -390,7 +491,7 @@ describe("Proposal aggregate", () => {
 
     const executed = createProposal();
     prepareVersion(executed);
-    executed.submit(context(2), true);
+    executed.submit(context(2), executiveAuthorization());
     executed.acceptByRecipient(
       { acceptanceId: "acceptance-2", recipientId: "recipient-1" },
       context(3)
@@ -406,34 +507,67 @@ describe("Proposal aggregate", () => {
     );
   });
 
-  it("creates a new revision without mutating the submitted version or inheriting acceptance", () => {
-    const proposal = createProposal();
-    const first = prepareVersion(proposal);
-    proposal.submit(context(2), true);
-    proposal.acceptByRecipient(
+  it("creates a replacement Proposal without mutating or resubmitting the original", () => {
+    const original = createProposal();
+    const submittedVersion = prepareVersion(original);
+    original.submit(context(2), executiveAuthorization());
+    original.acceptByRecipient(
       { acceptanceId: "acceptance-1", recipientId: "recipient-1" },
       context(3)
     );
-    proposal.beginRevision("2026-07-24T10:00:00.000Z");
-    proposal.updateDraft({ title: "Replacement offer" }, "2026-07-24T11:00:00.000Z");
-    const second = proposal.saveVersion(
-      { versionId: "version-2", revisionReason: "Client requested revised scope" },
+    const replacement = ProposalAggregate.createReplacement(
+      original,
+      {
+        id: "proposal-2",
+        proposalNumber: "PRO-000002",
+        ownerId: "user-owner",
+        title: "Replacement offer"
+      },
       context(4)
     );
-    proposal.submit(context(5), true);
+    const replacementVersion = prepareVersion(replacement, 5);
+    replacement.submit(context(6), executiveAuthorization());
+    original.supersedeBy(replacement, context(7));
 
-    expect(first.draft.title).toBe("Operational improvement");
-    expect(second.draft.title).toBe("Replacement offer");
-    expect(proposal.state.submittedVersionId).toBe("version-2");
-    expect(proposal.state.acceptances).toHaveLength(1);
-    expect(proposal.state.currentAcceptanceId).toBeNull();
-    expect(proposal.state.status).toBe("SUBMITTED");
+    expect(submittedVersion.draft.title).toBe("Operational improvement");
+    expect(original.state.submittedVersionId).toBe("version-1");
+    expect(original.state.acceptances).toHaveLength(1);
+    expect(original.state.status).toBe("SUPERSEDED");
+    expect(original.state.supersededByProposalId).toBe("proposal-2");
+    expect(replacement.state.supersedesProposalId).toBe("proposal-1");
+    expect(replacementVersion.draft.title).toBe("Replacement offer");
+    expect(replacementVersion.draft.content.title).toBe("Replacement offer");
+    expect(replacement.state.acceptances).toHaveLength(0);
+    expect(replacement.state.status).toBe("SUBMITTED");
+    expectDomainError(
+      () => original.submit(context(8), executiveAuthorization()),
+      "SUBMISSION_TRANSITION_INVALID"
+    );
+  });
+
+  it("rejects supersession by an unrelated Proposal", () => {
+    const original = createProposal();
+    prepareVersion(original);
+    original.submit(context(2), executiveAuthorization());
+
+    const unrelated = createProposal("PROJECT", "PROJECT", {
+      id: "proposal-2",
+      proposalNumber: "PRO-000002"
+    });
+    prepareVersion(unrelated, 3);
+    unrelated.submit(context(4), executiveAuthorization());
+
+    expectDomainError(
+      () => original.supersedeBy(unrelated, context(5)),
+      "SUPERSESSION_INVALID"
+    );
+    expect(original.state.status).toBe("SUBMITTED");
   });
 
   it("enforces decline, expiration, supersession, and archive lifecycle rules", () => {
     const declined = createProposal();
     prepareVersion(declined);
-    declined.submit(context(2), true);
+    declined.submit(context(2), executiveAuthorization());
     declined.decline(context(3));
     expect(declined.state.status).toBe("DECLINED");
     expect(declined.state.closedAt).toBe(context(3).occurredAt);
@@ -442,7 +576,7 @@ describe("Proposal aggregate", () => {
 
     const expired = createProposal();
     prepareVersion(expired);
-    expired.submit(context(2), true);
+    expired.submit(context(2), executiveAuthorization());
     expectDomainError(
       () => expired.expire(context(3, "2026-08-01T12:00:00.000Z")),
       "EXPIRATION_INVALID"
@@ -452,8 +586,15 @@ describe("Proposal aggregate", () => {
 
     const superseded = createProposal();
     prepareVersion(superseded);
-    superseded.submit(context(2), true);
-    superseded.supersede("proposal-2", context(3));
+    superseded.submit(context(2), executiveAuthorization());
+    const replacement = ProposalAggregate.createReplacement(
+      superseded,
+      { id: "proposal-2", proposalNumber: "PRO-000002", ownerId: "user-owner" },
+      context(3)
+    );
+    prepareVersion(replacement, 4);
+    replacement.submit(context(5), executiveAuthorization());
+    superseded.supersedeBy(replacement, context(6));
     expect(superseded.state.status).toBe("SUPERSEDED");
     expect(superseded.state.supersededByProposalId).toBe("proposal-2");
   });
@@ -461,7 +602,7 @@ describe("Proposal aggregate", () => {
   it("preserves Created, Effective, and Closed dates for distinct business purposes", () => {
     const proposal = createProposal();
     prepareVersion(proposal);
-    proposal.submit(context(2), true);
+    proposal.submit(context(2), executiveAuthorization());
     proposal.decline(context(3));
 
     expect(proposal.state.createdAt).toBe("2026-07-20T12:00:00.000Z");
@@ -475,11 +616,11 @@ describe("Proposal aggregate", () => {
   it("retains append-only immutable business events for every material command", () => {
     const proposal = createProposal();
     prepareVersion(proposal);
-    proposal.requestInternalReview(context(2));
-    proposal.requestChanges(context(3));
+    proposal.requestQualityReview(context(2));
+    proposal.requestChanges(context(3, undefined, "user-reviewer"));
     proposal.updateDraft({ title: "Reviewed offer" }, "2026-07-24T10:00:00.000Z");
     proposal.saveVersion({ versionId: "version-2" }, context(4));
-    proposal.submit(context(5), true);
+    proposal.submit(context(5), executiveAuthorization());
     proposal.recordViewed(context(6));
 
     expect(proposal.state.events.map(({ eventType }) => eventType)).toEqual([
@@ -499,10 +640,39 @@ describe("Proposal aggregate", () => {
     prepareVersion(proposal);
     const before = proposal.state;
 
-    expectDomainError(() => proposal.requestInternalReview(context(1)), "IDENTITY_INVALID");
+    expectDomainError(() => proposal.requestQualityReview(context(1)), "IDENTITY_INVALID");
 
     expect(proposal.state.status).toBe(before.status);
     expect(proposal.state.events).toEqual(before.events);
     expect(proposal.state.currentVersionId).toBe(before.currentVersionId);
+  });
+
+  it("enforces the foundation review, executive authorization, approval, rejection, and archive lifecycle", () => {
+    const approved = createProposal();
+    const version = prepareVersion(approved);
+    approved.requestQualityReview(context(2));
+    expectDomainError(
+      () => approved.submitForExecutiveAuthorization(context(3)),
+      "REVIEWER_NOT_INDEPENDENT"
+    );
+    approved.submitForExecutiveAuthorization(context(3, undefined, "user-reviewer"));
+    expect(approved.state.status).toBe("EXECUTIVE_AUTHORIZATION");
+    approved.approveProposal(context(4, undefined, "user-executive"));
+    expect(approved.state).toMatchObject({
+      status: "APPROVED",
+      submittedVersionId: version.versionId,
+      effectiveAt: context(4).occurredAt
+    });
+    approved.archive(context(5, undefined, "user-executive"));
+    expect(approved.state.status).toBe("ARCHIVED");
+
+    const rejected = createProposal();
+    prepareVersion(rejected);
+    rejected.requestQualityReview(context(2));
+    rejected.rejectProposal(context(3, undefined, "user-reviewer"));
+    expect(rejected.state).toMatchObject({
+      status: "REJECTED",
+      closedAt: context(3).occurredAt
+    });
   });
 });

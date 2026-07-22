@@ -1,0 +1,1 @@
+import{AgreementSignatureScreen}from"@/presentation/screens/agreements/agreement-signature-screen";export default async function Page({params}:{params:Promise<{token:string}>}){return<AgreementSignatureScreen token={(await params).token}/>;}

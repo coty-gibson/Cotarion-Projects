@@ -9,6 +9,12 @@ import type {
   ServiceCatalogRepository
 } from "@/application/pricing/pricing-persistence";
 import { prisma } from "@/infrastructure/database/prisma";
+import {
+  PricingConcurrencyError,
+  PricingGovernanceError
+} from "@/domain/pricing/pricing-governance-errors";
+import { PricingProject, type JsonObject } from "@/domain/pricing/pricing-project";
+import type { PricingGovernanceEvent } from "@/domain/pricing/pricing-governance-events";
 
 const pricingProjectInclude = {
   lines: {
@@ -18,6 +24,11 @@ const pricingProjectInclude = {
   complexitySelections: { orderBy: { sortOrder: "asc" as const } },
   discountSelection: true
 } satisfies Prisma.PricingProjectInclude;
+
+// Legacy Phase 4 normalized adapters below are quarantined for historical
+// migration compatibility. Production Pricing commands use only
+// createPrismaPricingAggregateRepository; production queries use the dedicated
+// pricing-read-repository. Do not compose these adapters into application flows.
 
 type PricingProjectWithRelations = Prisma.PricingProjectGetPayload<{
   include: typeof pricingProjectInclude;
@@ -230,14 +241,6 @@ export function createPrismaPricingProjectRepository(
       });
     },
 
-    async updatePricingProjectStatus(companyId, pricingProjectId, status) {
-      const updated = await client.pricingProject.updateMany({
-        where: { id: pricingProjectId, companyId },
-        data: { status }
-      });
-      if (updated.count === 0) return null;
-      return mapProject((await findProject(client, companyId, pricingProjectId))!);
-    }
   };
 }
 
@@ -308,6 +311,264 @@ export function createPrismaPricingConfigurationRepository(
         where: { id: pricingConfigurationVersionId, companyId }
       });
       return version ? mapConfiguration(version) : null;
+    }
+  };
+}
+
+const governanceInclude = {
+  governanceDraft: true,
+  versions: { orderBy: { versionNumber: "asc" as const } },
+  reviewDecisions: { orderBy: [{ decidedAt: "asc" as const }, { id: "asc" as const }] },
+  processedCommands: { orderBy: { commandId: "asc" as const } },
+  governanceEvents: { orderBy: [{ aggregateRevision: "asc" as const }, { eventId: "asc" as const }] }
+} satisfies Prisma.PricingProjectInclude;
+
+type GovernanceProjectRow = Prisma.PricingProjectGetPayload<{ include: typeof governanceInclude }>;
+
+export class PricingPersistenceConcurrencyError extends PricingConcurrencyError {
+  constructor(expectedRevision: number, actualRevision: number) {
+    super(expectedRevision, actualRevision);
+  }
+}
+
+function asJsonObject(value: Prisma.JsonValue): JsonObject {
+  if (value === null || Array.isArray(value) || typeof value !== "object") {
+    throw new PricingGovernanceError("VERSION_EVIDENCE_INVALID", "Persisted Pricing evidence must be a JSON object.");
+  }
+  return value as JsonObject;
+}
+
+function mapGovernanceAggregate(row: GovernanceProjectRow): PricingProject {
+  const draft = row.governanceDraft;
+  if (!draft) {
+    throw new PricingGovernanceError("VERSION_EVIDENCE_INVALID", "Persisted Pricing Project is missing its Draft.");
+  }
+  const versionIds = new Set(row.versions.map(({ id }) => id));
+  if (row.reviewCandidateVersionId && !versionIds.has(row.reviewCandidateVersionId)) {
+    throw new PricingGovernanceError("REVIEW_CANDIDATE_REQUIRED", "Persisted review candidate does not belong to the aggregate.");
+  }
+  if (row.approvedVersionId && !versionIds.has(row.approvedVersionId)) {
+    throw new PricingGovernanceError("APPROVED_VERSION_REQUIRED", "Persisted approved Version does not belong to the aggregate.");
+  }
+  const versionNumber = (id: string) => row.versions.find((version) => version.id === id)!.versionNumber;
+  return PricingProject.rehydrate({
+    id: row.id,
+    companyId: row.companyId,
+    clientId: row.clientId,
+    ownerId: row.ownerId,
+    estimateNumber: row.estimateNumber,
+    status: row.status,
+    revision: row.aggregateRevision,
+    draftCurrency: row.draftCurrencyRevision,
+    draft: {
+      projectName: draft.projectName,
+      pricingModel: draft.pricingModel,
+      currency: draft.currency,
+      pricingConfigurationVersionId: draft.pricingConfigurationVersionId,
+      pricingConfigurationVersion: draft.pricingConfigurationVersion,
+      configurationSchemaVersion: draft.configurationSchemaVersion,
+      engineVersion: draft.engineVersion,
+      methodologyVersion: draft.methodologyVersion,
+      inputSnapshot: asJsonObject(draft.inputSnapshot),
+      outputSnapshot: asJsonObject(draft.outputSnapshot),
+      explanationSnapshot: asJsonObject(draft.explanationSnapshot),
+      catalogSnapshot: asJsonObject(draft.catalogSnapshot)
+    },
+    versions: row.versions.map((version) => ({
+      id: version.id,
+      number: version.versionNumber,
+      creatorId: version.creatorId,
+      createdAt: version.createdAt.toISOString(),
+      draftCurrency: version.draftCurrencyRevision,
+      content: {
+        projectName: version.projectName,
+        pricingModel: version.pricingModel,
+        currency: version.currency,
+        pricingConfigurationVersionId: version.pricingConfigurationVersionId,
+        pricingConfigurationVersion: version.pricingConfigurationVersion,
+        configurationSchemaVersion: version.configurationSchemaVersion,
+        engineVersion: version.engineVersion,
+        methodologyVersion: version.methodologyVersion,
+        inputSnapshot: asJsonObject(version.inputSnapshot),
+        outputSnapshot: asJsonObject(version.outputSnapshot),
+        explanationSnapshot: asJsonObject(version.explanationSnapshot),
+        catalogSnapshot: asJsonObject(version.catalogSnapshot)
+      }
+    })),
+    reviewCandidate: row.reviewCandidateVersionId ? {
+      versionId: row.reviewCandidateVersionId,
+      versionNumber: versionNumber(row.reviewCandidateVersionId),
+      requestedBy: row.reviewRequestedBy!,
+      requestedAt: row.reviewRequestedAt!.toISOString()
+    } : null,
+    approvedVersion: row.approvedVersionId ? {
+      versionId: row.approvedVersionId,
+      versionNumber: versionNumber(row.approvedVersionId),
+      approvedBy: row.approvedBy!,
+      approvedAt: row.approvedAt!.toISOString()
+    } : null,
+    reviewDecisions: row.reviewDecisions.map((decision) => ({
+      outcome: decision.outcome,
+      versionId: decision.pricingVersionId,
+      versionNumber: decision.versionNumber,
+      decidedBy: decision.decidedBy,
+      decidedAt: decision.decidedAt.toISOString(),
+      ...(decision.finding ? { finding: decision.finding } : {})
+    })),
+    processedCommands: row.processedCommands.map((command) => ({
+      commandId: command.commandId,
+      fingerprint: command.fingerprint,
+      revision: command.aggregateRevision
+    })),
+    eventIds: row.governanceEvents.map(({ eventId }) => eventId)
+  });
+}
+
+function contentData(content: PricingProject["draft"]) {
+  return {
+    projectName: content.projectName,
+    pricingModel: content.pricingModel,
+    currency: content.currency,
+    pricingConfigurationVersionId: content.pricingConfigurationVersionId,
+    pricingConfigurationVersion: content.pricingConfigurationVersion,
+    configurationSchemaVersion: content.configurationSchemaVersion,
+    engineVersion: content.engineVersion,
+    methodologyVersion: content.methodologyVersion,
+    inputSnapshot: content.inputSnapshot as Prisma.InputJsonValue,
+    outputSnapshot: content.outputSnapshot as Prisma.InputJsonValue,
+    explanationSnapshot: content.explanationSnapshot as Prisma.InputJsonValue,
+    catalogSnapshot: content.catalogSnapshot as Prisma.InputJsonValue
+  };
+}
+
+export interface PricingAggregateRepository {
+  load(companyId: string, pricingProjectId: string): Promise<{ aggregate: PricingProject; revision: number } | null>;
+  save(aggregate: PricingProject, expectedRevision: number, events: readonly PricingGovernanceEvent[]): Promise<{ revision: number }>;
+}
+
+export function createPrismaPricingAggregateRepository(client: PrismaClient = prisma): PricingAggregateRepository {
+  return {
+    async load(companyId, pricingProjectId) {
+      const row = await client.pricingProject.findFirst({
+        where: { id: pricingProjectId, companyId },
+        include: governanceInclude
+      });
+      return row ? { aggregate: mapGovernanceAggregate(row), revision: row.aggregateRevision } : null;
+    },
+
+    async save(aggregate, expectedRevision, events) {
+      const state = aggregate.persistenceState;
+      return client.$transaction(async (transaction) => {
+        const existing = await transaction.pricingProject.findFirst({
+          where: { id: state.id, companyId: state.companyId },
+          select: { aggregateRevision: true }
+        });
+        if (!existing) {
+          if (expectedRevision !== 0) throw new PricingPersistenceConcurrencyError(expectedRevision, 0);
+          await transaction.pricingProject.create({ data: {
+            id: state.id,
+            estimateNumber: state.estimateNumber,
+            companyId: state.companyId,
+            clientId: state.clientId,
+            ownerId: state.ownerId,
+            pricingConfigurationVersionId: state.draft.pricingConfigurationVersionId,
+            projectName: state.draft.projectName,
+            pricingModel: state.draft.pricingModel,
+            methodologyVersion: state.draft.methodologyVersion,
+            pricingInputSnapshot: state.draft.inputSnapshot as Prisma.InputJsonValue,
+            pricingOutputSnapshot: state.draft.outputSnapshot as Prisma.InputJsonValue,
+            status: state.status,
+            currency: state.draft.currency,
+            aggregateRevision: state.revision,
+            draftCurrencyRevision: state.draftCurrency,
+            reviewCandidateVersionId: state.reviewCandidate?.versionId ?? null,
+            reviewRequestedBy: state.reviewCandidate?.requestedBy ?? null,
+            reviewRequestedAt: state.reviewCandidate ? new Date(state.reviewCandidate.requestedAt) : null,
+            approvedVersionId: state.approvedVersion?.versionId ?? null,
+            approvedBy: state.approvedVersion?.approvedBy ?? null,
+            approvedAt: state.approvedVersion ? new Date(state.approvedVersion.approvedAt) : null
+          }});
+        } else {
+          const updated = await transaction.pricingProject.updateMany({
+            where: { id: state.id, companyId: state.companyId, aggregateRevision: expectedRevision },
+            data: {
+              projectName: state.draft.projectName,
+              pricingModel: state.draft.pricingModel,
+              methodologyVersion: state.draft.methodologyVersion,
+              pricingInputSnapshot: state.draft.inputSnapshot as Prisma.InputJsonValue,
+              pricingOutputSnapshot: state.draft.outputSnapshot as Prisma.InputJsonValue,
+              status: state.status,
+              aggregateRevision: state.revision,
+              draftCurrencyRevision: state.draftCurrency,
+              reviewCandidateVersionId: state.reviewCandidate?.versionId ?? null,
+              reviewRequestedBy: state.reviewCandidate?.requestedBy ?? null,
+              reviewRequestedAt: state.reviewCandidate ? new Date(state.reviewCandidate.requestedAt) : null,
+              approvedVersionId: state.approvedVersion?.versionId ?? null,
+              approvedBy: state.approvedVersion?.approvedBy ?? null,
+              approvedAt: state.approvedVersion ? new Date(state.approvedVersion.approvedAt) : null
+            }
+          });
+          if (updated.count !== 1) throw new PricingPersistenceConcurrencyError(expectedRevision, existing.aggregateRevision);
+        }
+
+        await transaction.pricingDraft.upsert({
+          where: { pricingProjectId: state.id },
+          create: { pricingProjectId: state.id, companyId: state.companyId, ...contentData(state.draft), draftCurrencyRevision: state.draftCurrency },
+          update: { ...contentData(state.draft), draftCurrencyRevision: state.draftCurrency }
+        });
+        await transaction.pricingVersion.createMany({ data: state.versions.map((version) => ({
+          id: version.id,
+          pricingProjectId: state.id,
+          companyId: state.companyId,
+          versionNumber: version.number,
+          creatorId: version.creatorId,
+          createdAt: new Date(version.createdAt),
+          draftCurrencyRevision: version.draftCurrency,
+          ...contentData(version.content)
+        })), skipDuplicates: true });
+        await transaction.pricingReviewDecision.createMany({ data: state.reviewDecisions.map((decision, index) => ({
+          id: `${state.id}:review:${index + 1}`,
+          pricingProjectId: state.id,
+          companyId: state.companyId,
+          pricingVersionId: decision.versionId,
+          versionNumber: decision.versionNumber,
+          outcome: decision.outcome,
+          decidedBy: decision.decidedBy,
+          decidedAt: new Date(decision.decidedAt),
+          finding: decision.finding ?? null
+        })), skipDuplicates: true });
+        const newCommands = state.processedCommands.filter(
+          ({ revision }) => revision > expectedRevision
+        );
+        if (newCommands.length) {
+          await transaction.pricingProcessedCommand.createMany({ data: newCommands.map((command) => ({
+            commandId: command.commandId,
+            pricingProjectId: state.id,
+            companyId: state.companyId,
+            fingerprint: command.fingerprint,
+            aggregateRevision: command.revision
+          })) });
+        }
+        if (events.length) {
+          await transaction.pricingGovernanceEventRecord.createMany({ data: events.map((event) => ({
+            eventId: event.eventId,
+            pricingProjectId: state.id,
+            companyId: state.companyId,
+            eventType: event.type,
+            commandId: event.commandId,
+            actorId: event.actorId,
+            occurredAt: new Date(event.occurredAt),
+            aggregateRevision: event.aggregateRevision,
+            payload: event as unknown as Prisma.InputJsonValue
+          })) });
+        }
+        const archive = [...events].reverse().find((event) => event.type === "PricingProjectArchived");
+        if (archive) await transaction.pricingProject.update({
+          where: { id: state.id },
+          data: { archivedBy: archive.actorId, archivedAt: new Date(archive.occurredAt) }
+        });
+        return { revision: state.revision };
+      }, { maxWait: 15_000, timeout: 15_000 });
     }
   };
 }

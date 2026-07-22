@@ -1,3 +1,11 @@
+/**
+ * @deprecated Phase 4 normalized persistence contracts.
+ *
+ * Quarantined for historical migration compatibility only. No production
+ * Pricing application or presentation path may depend on these contracts.
+ * Governed commands use PricingAggregateRepository; queries use
+ * PricingReadRepository.
+ */
 export type PersistedPricingProjectStatus = "DRAFT" | "IN_REVIEW" | "QUOTED" | "ARCHIVED";
 export type PersistedPricingModelType =
   "PROJECT" | "FIXED_RETAINER" | "PROFIT_SHARE_RETAINER" | "HYBRID_RETAINER" | "ADVISORY_HOURLY";
@@ -119,11 +127,6 @@ export interface PricingProjectRepository {
     companyId: string,
     pricingProjectId: string,
     input: PricingProjectDraftData
-  ): Promise<PersistedPricingProject | null>;
-  updatePricingProjectStatus(
-    companyId: string,
-    pricingProjectId: string,
-    status: PersistedPricingProjectStatus
   ): Promise<PersistedPricingProject | null>;
 }
 

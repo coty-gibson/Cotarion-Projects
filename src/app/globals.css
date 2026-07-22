@@ -14,6 +14,26 @@
     --accent-foreground: 222.2 47.4% 11.2%;
     --border: 214.3 31.8% 91.4%;
     --radius: 0.5rem;
+    --surface: 0 0% 100%;
+    --sidebar: 222 36% 12%;
+    --sidebar-foreground: 210 30% 96%;
+    --success: 158 64% 34%;
+    --warning: 35 92% 42%;
+    --danger: 0 70% 48%;
+  }
+
+  .dark {
+    --background: 222 32% 8%;
+    --foreground: 210 30% 96%;
+    --muted: 217 24% 15%;
+    --muted-foreground: 215 16% 68%;
+    --primary: 210 30% 96%;
+    --primary-foreground: 222 32% 10%;
+    --accent: 217 24% 18%;
+    --accent-foreground: 210 30% 96%;
+    --border: 217 22% 20%;
+    --surface: 222 28% 11%;
+    --sidebar: 225 36% 6%;
   }
 
   * {
@@ -22,5 +42,143 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+
+  button, a, input, select, textarea { @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2; }
+}
+
+@layer components {
+  .workspace-shell { @apply min-h-screen bg-muted/30; }
+  .workspace-sidebar { @apply fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-[hsl(var(--sidebar))] px-4 py-5 text-[hsl(var(--sidebar-foreground))] lg:flex; }
+  .workspace-brand { @apply flex items-center gap-3 px-2; }
+  .workspace-brand div { @apply flex min-w-0 flex-col; }
+  .workspace-brand strong { @apply text-base font-semibold tracking-tight; }
+  .workspace-brand small { @apply mt-0.5 text-xs text-white/55; }
+  .workspace-mark { @apply grid h-9 w-9 place-items-center rounded-lg bg-white text-sm font-bold text-slate-950; }
+  .workspace-navigation { @apply mt-8 flex flex-1 flex-col gap-1 overflow-y-auto; }
+  .workspace-nav-link { @apply flex min-h-10 items-center justify-between rounded-md px-3 py-2 text-sm font-medium text-white/75 transition hover:bg-white/10 hover:text-white; }
+  .workspace-nav-link[aria-current="page"] { @apply bg-white/15 text-white; }
+  .workspace-nav-disabled { @apply cursor-not-allowed text-white/35 hover:bg-transparent hover:text-white/35; }
+  .workspace-nav-disabled span { @apply text-[10px] font-semibold uppercase tracking-wider; }
+  .workspace-sidebar-footer { @apply mt-5 flex items-center gap-3 border-t border-white/10 px-2 pt-5; }
+  .workspace-sidebar-footer div { @apply flex min-w-0 flex-col; }
+  .workspace-sidebar-footer strong { @apply truncate text-sm; }
+  .workspace-sidebar-footer small { @apply text-xs text-white/50; }
+  .workspace-avatar { @apply grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-sm font-semibold; }
+  .workspace-main { @apply min-h-screen lg:pl-64; }
+  .workspace-header { @apply sticky top-0 z-20 flex min-h-20 items-center justify-between gap-4 border-b bg-background/95 px-4 backdrop-blur md:px-7; }
+  .workspace-header-actions { @apply flex items-center gap-2; }
+  .workspace-menu-button { @apply rounded-md border px-3 py-2 text-sm font-medium lg:hidden; }
+  .workspace-icon-button { @apply rounded-md border bg-background px-3 py-2 text-xs font-medium hover:bg-accent; }
+  .workspace-eyebrow { @apply text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground; }
+  .workspace-breadcrumbs { @apply mt-1 flex items-center gap-2 text-sm capitalize; }
+  .workspace-breadcrumbs li + li::before { content: "/"; @apply mr-2 text-muted-foreground; }
+  .workspace-breadcrumbs a { @apply text-muted-foreground hover:text-foreground; }
+  .workspace-content { @apply mx-auto w-full max-w-[1500px] px-4 py-6 md:px-7 md:py-8; }
+  .workspace-mobile-drawer { @apply fixed inset-y-0 left-0 z-50 flex w-72 -translate-x-full flex-col bg-[hsl(var(--sidebar))] px-4 py-5 text-[hsl(var(--sidebar-foreground))] transition-transform lg:hidden; }
+  .workspace-mobile-drawer.is-open { @apply translate-x-0; }
+  .workspace-scrim { @apply fixed inset-0 z-40 bg-slate-950/55 lg:hidden; }
+  .workspace-page { @apply space-y-6; }
+  .page-header { @apply flex flex-col justify-between gap-4 border-b pb-6 sm:flex-row sm:items-end; }
+  .page-header h1 { @apply mt-2 text-3xl font-semibold tracking-tight; }
+  .page-header p:not(.workspace-eyebrow) { @apply mt-2 max-w-2xl text-sm leading-6 text-muted-foreground; }
+  .page-header-actions { @apply flex items-center gap-2; }
+  .workspace-filter-bar { @apply grid items-end gap-3 rounded-lg border bg-[hsl(var(--surface))] p-4 md:grid-cols-[180px_1fr_1fr_auto]; }
+  .workspace-field { @apply flex min-w-0 flex-col gap-1.5 text-sm font-medium; }
+  .workspace-field small { @apply font-normal text-muted-foreground; }
+  .workspace-input { @apply h-10 w-full rounded-md border bg-background px-3 text-sm placeholder:text-muted-foreground; }
+  .workspace-textarea { @apply min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground; }
+  .workspace-button { @apply inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40; }
+  .workspace-button-secondary { @apply border bg-background text-foreground hover:bg-accent; }
+  .workspace-panel { @apply overflow-hidden rounded-lg border bg-[hsl(var(--surface))] shadow-sm; }
+  .workspace-panel > header { @apply flex items-start justify-between border-b px-5 py-4; }
+  .workspace-panel h2 { @apply text-base font-semibold; }
+  .workspace-panel header p { @apply mt-1 text-sm text-muted-foreground; }
+  .workspace-panel-body { @apply p-5; }
+  .workspace-card-grid { @apply grid gap-4 sm:grid-cols-2 xl:grid-cols-4; }
+  .workspace-card { @apply rounded-lg border bg-[hsl(var(--surface))] p-5 shadow-sm; }
+  .workspace-card p { @apply text-xs font-semibold uppercase tracking-wider text-muted-foreground; }
+  .workspace-card strong { @apply mt-3 block break-all text-lg font-semibold; }
+  .workspace-card small { @apply mt-2 block text-xs text-muted-foreground; }
+  .workspace-two-column { @apply grid gap-6 xl:grid-cols-2; }
+  .data-table-wrap { @apply overflow-x-auto rounded-lg border bg-[hsl(var(--surface))]; }
+  .data-table { @apply w-full min-w-[760px] text-left text-sm; }
+  .data-table thead { @apply bg-muted/60 text-xs uppercase tracking-wider text-muted-foreground; }
+  .data-table th { @apply px-4 py-3 font-semibold; }
+  .data-table td { @apply border-t px-4 py-4 align-middle; }
+  .data-table tbody tr { @apply transition hover:bg-muted/35; }
+  .data-table td:first-child span { @apply mt-1 block max-w-xs text-xs text-muted-foreground; }
+  .table-primary-link { @apply font-semibold text-foreground underline-offset-4 hover:underline; }
+  .status-badge { @apply inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide; }
+  .status-positive { @apply border-emerald-600/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300; }
+  .status-negative { @apply border-red-600/30 bg-red-500/10 text-red-700 dark:text-red-300; }
+  .status-attention { @apply border-amber-600/30 bg-amber-500/10 text-amber-700 dark:text-amber-300; }
+  .status-neutral { @apply border-border bg-muted text-muted-foreground; }
+  .state-panel { @apply flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed bg-[hsl(var(--surface))] p-8 text-center; }
+  .state-panel > span:first-child { @apply mb-3 grid h-9 w-9 place-items-center rounded-full border text-sm font-bold; }
+  .state-panel h2 { @apply text-base font-semibold; }
+  .state-panel p { @apply mt-1 max-w-md text-sm text-muted-foreground; }
+  .state-panel .workspace-button { @apply mt-4; }
+  .state-error { @apply border-red-500/35; }
+  .loading-spinner { @apply animate-spin border-2 border-muted border-t-foreground; }
+  .workspace-pagination { @apply flex justify-end gap-2; }
+  .detail-list { @apply divide-y; }
+  .detail-list > div { @apply grid gap-2 py-3 sm:grid-cols-[150px_1fr]; }
+  .detail-list dt { @apply text-sm font-medium text-muted-foreground; }
+  .detail-list dd { @apply break-all text-sm font-medium; }
+  .muted-value { @apply text-muted-foreground; }
+  .workspace-timeline { @apply space-y-0; }
+  .workspace-timeline li { @apply relative flex gap-4 pb-6 last:pb-0; }
+  .workspace-timeline li::before { content: ""; @apply absolute left-[5px] top-3 h-full w-px bg-border; }
+  .workspace-timeline li:last-child::before { display: none; }
+  .workspace-timeline li > span { @apply relative z-10 mt-1.5 h-3 w-3 shrink-0 rounded-full border-2 border-background bg-foreground ring-1 ring-border; }
+  .workspace-timeline strong { @apply text-sm font-semibold; }
+  .workspace-timeline p { @apply mt-1 text-sm text-muted-foreground; }
+  .workspace-timeline time { @apply mt-1 block text-xs text-muted-foreground; }
+  .dialog-backdrop { @apply fixed inset-0 z-[70] grid place-items-center bg-slate-950/60 p-4; }
+  .confirm-dialog { @apply w-full max-w-md rounded-lg border bg-background p-6 shadow-xl; }
+  .confirm-dialog h2 { @apply text-lg font-semibold; }
+  .confirm-dialog p { @apply mt-2 text-sm text-muted-foreground; }
+  .confirm-dialog > div { @apply mt-6 flex justify-end gap-2; }
+  .toast-viewport { @apply fixed bottom-4 right-4 z-[80] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2; }
+  .toast { @apply rounded-md border bg-background px-4 py-3 text-sm shadow-lg; }
+  .toast-success { @apply border-emerald-500/40; }
+  .toast-error { @apply border-red-500/40; }
+  .proposal-actions { @apply flex flex-col justify-between gap-4 rounded-lg border bg-[hsl(var(--surface))] p-4 shadow-sm xl:flex-row xl:items-center; }
+  .proposal-actions > div:last-child { @apply flex flex-wrap gap-2; }
+  .proposal-actions p:not(.workspace-eyebrow) { @apply mt-1 text-sm text-muted-foreground; }
+  .proposal-form { @apply grid gap-4 md:grid-cols-2; }
+  .proposal-span { @apply md:col-span-2; }
+  .proposal-fieldset { @apply rounded-md border p-4; }
+  .proposal-fieldset legend { @apply px-2 text-sm font-semibold; }
+  .proposal-section-editor, .proposal-recipient { @apply grid gap-3 border-b py-4 last:border-b-0 md:grid-cols-2; }
+  .proposal-section-editor .workspace-field:nth-of-type(2) { @apply md:col-span-2; }
+  .proposal-check { @apply flex items-center gap-2 text-sm font-medium; }
+  .proposal-content-sections { @apply mt-5 grid gap-4 lg:grid-cols-2; }
+  .proposal-content-sections article { @apply rounded-md border bg-muted/20 p-4; }
+  .proposal-content-sections small { @apply text-xs font-semibold uppercase tracking-wide text-muted-foreground; }
+  .proposal-content-sections h3 { @apply mt-2 font-semibold; }
+  .proposal-content-sections p { @apply mt-2 whitespace-pre-wrap text-sm leading-6; }
+  .proposal-subheading { @apply mb-3 mt-6 text-sm font-semibold; }
+  .proposal-panel-action, .proposal-form-actions { @apply mt-5 flex justify-end gap-2; }
+  .proposal-command-dialog { @apply max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-lg border bg-background p-6 shadow-xl; }
+  .proposal-command-dialog h2 { @apply text-lg font-semibold; }
+  .proposal-command-dialog > p { @apply text-sm text-muted-foreground; }
+  .proposal-command-error { @apply rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-800 dark:text-red-200; }
+  .pricing-filter-bar { @apply grid items-end gap-3 rounded-lg border bg-[hsl(var(--surface))] p-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_160px_190px_160px_140px_auto]; }
+  .pricing-result-count { @apply text-right text-xs text-muted-foreground; }
+  .pricing-editor { @apply space-y-6; }
+  .pricing-form-grid { @apply grid gap-4 md:grid-cols-2; }
+  .pricing-snapshot-grid { @apply grid gap-4 xl:grid-cols-2; }
+  .pricing-json { @apply min-h-56 font-mono text-xs; }
+  .pricing-form-actions, .pricing-dialog-actions { @apply flex justify-end gap-2; }
+  .pricing-notice { @apply rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200; }
+  .pricing-conflict { @apply rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200; }
+  .pricing-conflict p { @apply mt-1; }
+  .pricing-conflict .workspace-button { @apply mt-3; }
+  .pricing-detail-links, .pricing-command-bar { @apply flex flex-wrap gap-2; }
+  .proposal-evidence-list { @apply divide-y rounded-md border; }
+  .proposal-evidence-list li { @apply flex flex-col gap-1 p-3 text-sm; }
+  .proposal-evidence-list span { @apply text-xs text-muted-foreground; }
 }

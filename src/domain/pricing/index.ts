@@ -16,6 +16,40 @@ export {
 } from "@/domain/pricing/initial-pricing-configuration";
 export { Money, PRICING_CURRENCY } from "@/domain/pricing/money";
 export {
+  PricingConcurrencyError,
+  PricingGovernanceError,
+  PricingTransitionError
+} from "@/domain/pricing/pricing-governance-errors";
+export type {
+  PricingGovernanceErrorCode
+} from "@/domain/pricing/pricing-governance-errors";
+export type { PricingGovernanceEvent } from "@/domain/pricing/pricing-governance-events";
+export {
+  DraftCurrency,
+  PricingIdentity,
+  PricingVersionNumber,
+  ReviewFinding
+} from "@/domain/pricing/pricing-governance-value-objects";
+export type {
+  ApprovedVersion,
+  ReviewCandidate,
+  ReviewDecision
+} from "@/domain/pricing/pricing-governance-value-objects";
+export { PricingProject } from "@/domain/pricing/pricing-project";
+export type {
+  JsonObject,
+  JsonValue,
+  PricingCommandContext,
+  PricingCommandResult,
+  PricingDraft,
+  PersistedPricingProjectState,
+  PricingProjectLifecycleStatus,
+  PricingTransition,
+  PricingVersion,
+  PricingVersionContent,
+  ProposalEligiblePricingVersion
+} from "@/domain/pricing/pricing-project";
+export {
   PRICING_CONFIGURATION_SCHEMA_VERSION,
   PRICING_ENGINE_VERSION,
   ROUNDING_MODE
