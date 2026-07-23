@@ -90,7 +90,7 @@ ADR identifiers are permanent, append-only identities rather than hierarchy posi
 
 ### Proposal, Agreement, and Engagement Management
 
-- [ADR-005: Engagement Lifecycle Architecture](ADR-005-engagement-lifecycle-architecture.md)
+- [ADR-005: Engagement Foundation Architecture](ADR-005-engagement-lifecycle-architecture.md)
 - [ADR-017: Proposal Management Business Architecture](ADR-017-proposal-management-business-architecture.md)
 - [ADR-018: Proposal Management Implementation Plan](ADR-018-proposal-management-implementation-plan.md)
 

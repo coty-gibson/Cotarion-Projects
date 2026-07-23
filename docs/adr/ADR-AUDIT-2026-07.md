@@ -109,3 +109,9 @@ The empty Proposed ADRs are documentation gaps, not approved architectural confl
 The approved Authentication, PostgreSQL, Company ownership, Pricing aggregate, Proposal architecture, and Proposal roadmap decisions accurately reflect current repository evidence.
 
 Proposal Management Sprint 0 remains paused. This audit does not authorize implementation; it establishes the truthful governance baseline and identifies focused ADR remediation that can be scheduled without silently rewriting history.
+
+## Follow-up — 2026-07-23
+
+The ADR-005 documentation gap identified by this audit is resolved. Product Owner decisions EF-01 through EF-14 now govern Engagement Foundation, and ADR-005 is the canonical Product Owner-approved architecture. The Engagement implementation roadmap remains Proposed, and no implementation is authorized.
+
+This follow-up does not rewrite the audit's historical findings as of its original review date.
